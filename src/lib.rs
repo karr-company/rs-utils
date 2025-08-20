@@ -4,7 +4,7 @@ use openssl::error::ErrorStack;
 use openssl::ssl::{SslConnector, SslMethod};
 use postgres::{Client as PostgresClient, Error as PostgresError, Transaction, error::SqlState};
 use postgres_openssl::MakeTlsConnector;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -134,7 +134,7 @@ pub enum CertError {
     ReqwestError(#[from] reqwest::Error),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DynamicItem {
     #[serde(flatten)]
     fields: HashMap<String, Value>,
