@@ -117,6 +117,14 @@ pub fn item_to_json_map(item: &HashMap<String, AttributeValue>) -> serde_json::M
         .collect()
 }
 
+pub fn convert_and_deserialize(
+    item: HashMap<String, AttributeValue>,
+) -> Result<DynamicItem, serde_json::Error> {
+    let json_map = item_to_json_map(&item);
+    let json_value = serde_json::Value::Object(json_map);
+    serde_json::from_value(json_value)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CertError {
     #[error("OpenSSL error")]
