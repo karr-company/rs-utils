@@ -1,4 +1,10 @@
+use anyhow::{Result, anyhow};
 use aws_sdk_dynamodb::types::AttributeValue;
+use base64::{
+    Engine as _, alphabet,
+    engine::{self, general_purpose},
+};
+use hex::decode as hex_decode;
 use lambda_http::{Body, Error as LambdaError, Response, http::StatusCode};
 use openssl::error::ErrorStack;
 use openssl::ssl::{SslConnector, SslMethod};
@@ -6,6 +12,7 @@ use postgres::{Client as PostgresClient, Error as PostgresError, Transaction, er
 use postgres_openssl::MakeTlsConnector;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sodiumoxide::crypto::box_;
 use std::collections::HashMap;
 
 /// Runs op inside a transaction and retries it as needed.
@@ -115,6 +122,44 @@ pub fn item_to_json_map(item: &HashMap<String, AttributeValue>) -> serde_json::M
     item.iter()
         .map(|(k, v)| (k.clone(), attribute_value_to_json(v)))
         .collect()
+}
+
+pub fn decrypt_nacl_box(
+    ciphertext_b64: &str,
+    nonce_b64: &str,
+    ephemeral_pub_b64: &str,
+    server_secret_key_hex: &str,
+) -> Result<String> {
+    // Initialize sodium
+    sodiumoxide::init().map_err(|_| anyhow!("Failed to init sodiumoxide"))?;
+
+    // Decode server's secret key from hex
+    let server_sk_bytes =
+        hex_decode(server_secret_key_hex).map_err(|_| anyhow!("Invalid hex in secret key"))?;
+    let server_sk = box_::SecretKey::from_slice(&server_sk_bytes)
+        .ok_or_else(|| anyhow!("Invalid server secret key"))?;
+    let decoder = engine::GeneralPurpose::new(&alphabet::URL_SAFE, general_purpose::NO_PAD);
+    // Decode client ephemeral public key
+    let client_pk_bytes = decoder.decode(ephemeral_pub_b64)?;
+    let client_pk = box_::PublicKey::from_slice(&client_pk_bytes)
+        .ok_or_else(|| anyhow!("Invalid client public key"))?;
+
+    // Decode nonce
+    let nonce_bytes = decoder.decode(nonce_b64)?;
+    let nonce = box_::Nonce::from_slice(&nonce_bytes).ok_or_else(|| anyhow!("Invalid nonce"))?;
+
+    // Decode ciphertext
+    let ciphertext = decoder.decode(ciphertext_b64)?;
+
+    // Attempt decryption
+    let decrypted = box_::open(&ciphertext, &nonce, &client_pk, &server_sk)
+        .map_err(|_| anyhow!("Decryption failed"))?;
+
+    // Convert decrypted bytes to UTF-8 string
+    let decrypted_str =
+        String::from_utf8(decrypted).map_err(|_| anyhow!("Decrypted data is not valid UTF-8"))?;
+
+    Ok(decrypted_str)
 }
 
 pub fn convert_and_deserialize(
