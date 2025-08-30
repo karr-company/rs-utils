@@ -184,3 +184,43 @@ pub struct DynamicItem {
     #[serde(flatten)]
     fields: HashMap<String, Value>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD};
+
+    #[test]
+    fn test_decrypt_nacl_box_success() {
+        // Initialize sodium
+        sodiumoxide::init().unwrap();
+
+        // Generate key pairs
+        let (client_pk, client_sk) = box_::gen_keypair();
+        let (server_pk, server_sk) = box_::gen_keypair();
+
+        // Create a message and nonce
+        let message = b"hello world";
+        let nonce = box_::gen_nonce();
+
+        // Encrypt the message
+        let ciphertext = box_::seal(message, &nonce, &server_pk, &client_sk);
+
+        // Encode parts
+        let ciphertext_b64 = URL_SAFE_NO_PAD.encode(&ciphertext);
+        let nonce_b64 = URL_SAFE_NO_PAD.encode(nonce.as_ref());
+        let ephemeral_pub_b64 = URL_SAFE_NO_PAD.encode(client_pk.as_ref());
+        let server_secret_key_hex = hex::encode(server_sk.as_ref());
+
+        // Call the function under test
+        let result = decrypt_nacl_box(
+            &ciphertext_b64,
+            &nonce_b64,
+            &ephemeral_pub_b64,
+            &server_secret_key_hex,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello world");
+    }
+}
