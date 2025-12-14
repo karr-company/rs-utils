@@ -106,33 +106,33 @@ pub fn encrypt_box(
 ///
 /// # Arguments
 /// * `plaintext` - UTF-8 string to encrypt
-/// * `sender_secret_hex` - Hex-encoded sender secret key
+/// * `sender_public_key` - Base-64 sender public key
 ///
 /// # Returns
 /// Base64-encoded ciphertext, nonce, and ephemeral public key
 pub fn encrypt_ephemeral_box(
     plaintext: &str,
-    sender_secret_hex: &str,
+    sender_pub_b64: &str,
 ) -> Result<EncryptedEphemeralMessage> {
     sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide"))?;
 
-    let sender_sk_bytes = hex_decode(sender_secret_hex)?;
-    let sender_sk = SecretKey::from_slice(&sender_sk_bytes)
-        .ok_or_else(|| anyhow!("Invalid sender secret key"))?;
+    let sender_pk_bytes = decode_b64(sender_pub_b64)?;
+    let sender_pk = PublicKey::from_slice(&sender_pk_bytes)
+        .ok_or_else(|| anyhow!("Invalid sender public key"))?;
 
-    let (ephemeral_pk, _ephemeral_sk) = box_::gen_keypair();
-    let recipient_pk = PublicKey::from_slice(&ephemeral_pk.as_ref())
-        .ok_or_else(|| anyhow!("Invalid recipient public key"))?;
+    let (_ephemeral_pk, ephemeral_sk) = box_::gen_keypair();
+    let recipient_sk = SecretKey::from_slice(&ephemeral_sk.as_ref())
+        .ok_or_else(|| anyhow!("Invalid recipient secret key"))?;
 
     // Generate random nonce
     let nonce = box_::gen_nonce();
     let nonce_b64 = encode_b64(nonce.as_ref());
-    let ciphertext = box_::seal(plaintext.as_bytes(), &nonce, &recipient_pk, &sender_sk);
+    let ciphertext = box_::seal(plaintext.as_bytes(), &nonce, &sender_pk, &recipient_sk);
 
     Ok(EncryptedEphemeralMessage {
         ciphertext: encode_b64(&ciphertext),
         nonce: nonce_b64,
-        ephemeral_public_key: encode_b64(ephemeral_pk.as_ref()),
+        ephemeral_secret_key: encode_b64(ephemeral_sk.as_ref()),
     })
 }
 
@@ -195,8 +195,8 @@ pub struct EncryptedEphemeralMessage {
     pub ciphertext: String,
     /// Base64-encoded nonce
     pub nonce: String,
-    /// Base64-encoded sender public key
-    pub ephemeral_public_key: String,
+    /// Base64-encoded sender secret key
+    pub ephemeral_secret_key: String,
 }
 
 #[cfg(test)]
@@ -207,14 +207,14 @@ mod tests {
     #[test]
     fn test_encrypt_ephemeral_box() {
         sodiumoxide::init().unwrap();
-        let (_sender_pk, sender_sk) = box_::gen_keypair();
+        let (sender_pk, _sender_sk) = box_::gen_keypair();
         let plaintext = "ephemeral message";
 
-        let encrypted = encrypt_ephemeral_box(plaintext, &hex::encode(sender_sk.as_ref())).unwrap();
-
+        let encrypted = encrypt_ephemeral_box(plaintext, &encode_b64(sender_pk.as_ref())).unwrap();
+        
         assert!(!encrypted.ciphertext.is_empty());
         assert!(!encrypted.nonce.is_empty());
-        assert!(!encrypted.ephemeral_public_key.is_empty());
+        assert!(!encrypted.ephemeral_secret_key.is_empty());
     }
 
     #[test]
