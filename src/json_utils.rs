@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use aws_sdk_dynamodb::types::AttributeValue;
-use lambda_http::{Error as LambdaError, Response, http::StatusCode};
+use lambda_http::{Body, Error as LambdaError, Response, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -19,11 +19,11 @@ use std::collections::HashMap;
 ///
 /// # Returns
 /// `Response<Body>` with status 200 and content-type application/json
-pub fn json_response(payload: String) -> Result<Response<String>, LambdaError> {
+pub fn json_response(payload: String) -> Result<Response<Body>, LambdaError> {
     let rsp = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(payload)
+        .body(payload.into())
         .map_err(Box::new)?;
     Ok(rsp)
 }
@@ -32,11 +32,11 @@ pub fn json_response(payload: String) -> Result<Response<String>, LambdaError> {
 ///
 /// # Returns
 /// `Response<Body>` with status 200 and content-type application/json
-pub fn empty_json_response() -> Result<Response<String>, LambdaError> {
+pub fn empty_json_response() -> Result<Response<Body>, LambdaError> {
     let rsp = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(json!({}).to_string())
+        .body(json!({}).to_string().into())
         .map_err(Box::new)?;
     Ok(rsp)
 }
@@ -52,12 +52,12 @@ pub fn empty_json_response() -> Result<Response<String>, LambdaError> {
 pub fn error_response(
     err: &dyn std::error::Error,
     status_code: StatusCode,
-) -> Result<Response<String>, LambdaError> {
+) -> Result<Response<Body>, LambdaError> {
     let payload = json!({ "error": err.to_string() });
     let rsp = Response::builder()
         .status(status_code)
         .header("content-type", "application/json")
-        .body(payload.to_string())
+        .body(payload.to_string().into())
         .map_err(Box::new)?;
     Ok(rsp)
 }
