@@ -54,7 +54,18 @@ jobs:
           DEST=docs-repo/docs/api/sst/functions/rust/utils
           rm -rf "$DEST"
           mkdir -p "$DEST"
+
+          for dir in generated_docs/rs_utils/*/; do
+            mod="${dir%/}"
+            mod="${mod##*/}"
+            if [ -f "${dir}index.md" ]; then
+              cp "${dir}index.md" "generated_docs/rs_utils/${mod}.md"
+              rm "${dir}index.md"
+            fi
+          done
+
           cp -r generated_docs/rs_utils/* "$DEST"
+          
 
       - name: Commit and push docs
         run: |
