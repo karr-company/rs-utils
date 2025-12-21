@@ -32,9 +32,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Generate documentation
-        run: cargo doc --no-deps --release
-
       - name: Checkout docs repository
         uses: actions/checkout@v4
         with:
@@ -42,12 +39,15 @@ jobs:
           token: ${{ secrets.DOCGEN_TOKEN }}
           path: 
 
+      - name: Generate documentation
+        run: cargo doc --no-deps --release
+
       - name: Copy docs into 
         run: |
           DEST=docs/api/sst/functions/rust/utils
           rm -rf "$DEST"
           mkdir -p "$DEST"
-          cp -r target/doc/* "$DEST"
+          cp -r target/doc/rs-utils/* "$DEST"
 
       - name: Commit and push docs
         run: |
