@@ -55,6 +55,11 @@ jobs:
           rm -rf "$DEST"
           mkdir -p "$DEST"
 
+          if [ -f generated_docs/rs_utils/index.md ]; then
+            # Replace all links to .../mod/index.md with .../mod.md
+            sed -i 's#\([^(]\+\)/\([^/]\+\)/index.md#\1/\2.md#g' generated_docs/rs_utils/index.md
+          fi
+
           for dir in generated_docs/rs_utils/*/; do
             mod="${dir%/}"
             mod="${mod##*/}"

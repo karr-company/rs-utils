@@ -34,7 +34,7 @@ pub use json_utils::{
 
 pub mod validation_utils;
 
-pub use validation_utils::{is_valid_email, is_valid_phone_number};
+pub use validation_utils::{is_valid_email, is_valid_phone_number, verify_apple_id_token, verify_google_id_token, AuthError, AppleTokenClaims, GoogleTokenClaims};
 
 pub mod sst_resources;
 
