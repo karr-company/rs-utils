@@ -26,35 +26,35 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate documentation
+        run: cargo doc --no-deps --release
 
       - name: Checkout docs repository
         uses: actions/checkout@v4
         with:
           repository: karr-company/docs
           token: ${{ secrets.DOCGEN_TOKEN }}
-          path: 
+          path: docs-repo
 
-      - name: Generate documentation
-        run: cargo doc --no-deps --release
-
-      - name: Copy docs into 
+      - name: Copy docs into docs-repo
         run: |
-          DEST=docs/api/sst/functions/rust/utils
+          DEST=docs-repo/docs/api/sst/functions/rust/utils
           rm -rf "$DEST"
           mkdir -p "$DEST"
           cp -r target/doc/rs-utils/* "$DEST"
 
       - name: Commit and push docs
         run: |
-          cd docs
+          cd docs-repo
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           git add docs/api/sst/functions/rust/utils
           git commit -m "Update Rust API docs from rs-utils" || echo "No changes"
-          git push  
+          git push
