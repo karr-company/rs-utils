@@ -30,10 +30,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install Cargo Docs MD
+        run: cargo install cargo-docs-md
 
       - name: Generate documentation
-        run: cargo doc --no-deps --release
+        run: |
+          cargo docs-md collect-sources --minimal-sources
+          cargo docs-md docs --exclude-private --primary-crate rs_utils
+
+
 
       - name: Checkout docs repository
         uses: actions/checkout@v4
@@ -47,7 +54,7 @@ jobs:
           DEST=docs-repo/docs/api/sst/functions/rust/utils
           rm -rf "$DEST"
           mkdir -p "$DEST"
-          cp -r target/doc/rs-utils/* "$DEST"
+          cp -r generated_docs/rs_utils/* "$DEST"
 
       - name: Commit and push docs
         run: |
