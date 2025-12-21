@@ -3,17 +3,24 @@ name = "rs-utils"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "generate_keypair"
+path = "src/tools/generate_keypair.rs"
+
 [dependencies]
 anyhow = "1.0.99"
 aws-sdk-dynamodb = "1.95.0"
 aws_lambda_events = { version = "0.18.0", default-features = false, features = ["apigw", "sqs"] }
+chrono = "0.4.42"
 base64 = "0.22.1"
 hex = "0.4.3"
+jsonwebtoken = "9.3"
 lambda_http = "0.17.0"
 lambda_runtime = "0.14.4"
 openssl = { version = "0.10.73", features = ["vendored"] }
 postgres = "0.19.10"
 postgres-openssl = "0.5.1"
+regex = "1.12.2"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
@@ -21,6 +28,5 @@ sodiumoxide = "0.2.7"
 thiserror = "2.0.17"
 tokio = { version = "1", features = ["full"] }
 
-[[bin]]
-name = "generate_keypair"
-path = "src/tools/generate_keypair.rs"
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

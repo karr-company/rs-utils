@@ -23,16 +23,38 @@ jobs:
       - name: Run tests with coverage
         run: cargo tarpaulin --out json --output-dir target/coverage
 
-      - name: Extract coverage percentage
-        id: coverage
-        run: |
-          COVERAGE=$(cat target/coverage/tarpaulin-report.json | jq '.coverage')
-          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Coverage: $COVERAGE%"
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Generate coverage badge
-        uses: ozankasikci/rust-test-coverage-badge@v1
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate documentation
+        run: cargo doc --no-deps --release
+
+      - name: Checkout docs repository
+        uses: actions/checkout@v4
         with:
-          coverage: ${{ steps.coverage.outputs.percentage }}
-          output: assets/coverage.svg
-          commit: true
+          repository: karr-company/docs
+          token: ${{ secrets.DOCGEN_TOKEN }}
+          path: 
+
+      - name: Copy docs into 
+        run: |
+          DEST=docs/api/sst/functions/rust/utils
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          cp -r target/doc/* "$DEST"
+
+      - name: Commit and push docs
+        run: |
+          cd docs
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add docs/api/sst/functions/rust/utils
+          git commit -m "Update Rust API docs from rs-utils" || echo "No changes"
+          git push  

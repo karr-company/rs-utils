@@ -1,3 +1,12 @@
+//! CockroachDB Utilities (Legacy)
+//!
+//! **Note:** This module is not exported in the public API and exists for legacy and migration purposes only.
+//!
+//! Provides helpers for CockroachDB transactional logic and SSL configuration, including:
+//! - Transaction retry logic for CockroachDB
+//! - SSL certificate configuration for secure connections
+//!
+//! This code is not intended for new development and may be removed in future versions.
 use anyhow::{Result, anyhow};
 use aws_sdk_dynamodb::types::AttributeValue;
 use base64::{
@@ -18,6 +27,7 @@ use std::collections::HashMap;
 /// Runs op inside a transaction and retries it as needed.
 /// On non-retryable failures, the transaction is aborted and
 /// rolled back; on success, the transaction is committed.
+#[cfg(not(tarpaulin_include))]
 pub fn execute_txn<T, F>(client: &mut PostgresClient, op: F) -> Result<T, PostgresError>
 where
     F: Fn(&mut Transaction) -> Result<T, PostgresError>,
@@ -40,6 +50,7 @@ where
 }
 
 // Get SSL config
+#[cfg(not(tarpaulin_include))]
 pub async fn ssl_config(cert_url: &str) -> Result<MakeTlsConnector, CertError> {
     let cert_pem = reqwest::get(cert_url).await?.bytes().await?;
     let cert = openssl::x509::X509::from_pem(&cert_pem)?;
@@ -55,32 +66,11 @@ pub async fn ssl_config(cert_url: &str) -> Result<MakeTlsConnector, CertError> {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[cfg(not(tarpaulin_include))]
 pub enum CertError {
     #[error("OpenSSL error")]
     OpenSslError(#[from] ErrorStack),
 
     #[error("Reqwest error")]
     ReqwestError(#[from] reqwest::Error),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-
-    #[test]
-    fn test_execute_txn() {
-        // This test would require a live Postgres database connection.
-        // For demonstration purposes, we will just ensure the function compiles.
-        // In a real-world scenario, you would set up a test database and
-        // verify transaction behavior here.
-        assert!(true);
-    }
-
-    #[tokio::test]
-    async fn test_ssl_config_invalid_url() {
-        let cert_url = "https://fm4dd.com/openssl/source/PEM/certs/napoleon-cert.pem";
-        let result = ssl_config(cert_url).await;
-        assert!(result.is_err());
-    }
 }
