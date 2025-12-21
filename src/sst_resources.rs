@@ -34,3 +34,24 @@ pub struct Secret {
 pub struct Queue {
     pub url: String,
 }
+
+/// SST User Pool Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UserPool {
+    pub id: String,
+}
+
+/// SST User Pool Client Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UserPoolClient {
+    pub id: String,
+}
+
+/// SST Identity Pool Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct IdentityPool {
+    pub id: String,
+}
