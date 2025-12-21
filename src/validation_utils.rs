@@ -48,34 +48,34 @@ pub enum AuthError {
 /// Claims extracted from an Apple ID token.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppleTokenClaims {
-    aud: Option<String>,
-    email: Option<String>,
-    email_verified: Option<bool>,
-    exp: Option<usize>,
-    iat: Option<usize>,
-    is_private_email: Option<bool>,
-    iss: Option<String>,
-    nonce: Option<String>,
-    nonce_supported: Option<bool>,
-    real_user_status: Option<u8>,
-    sub: Option<String>,
-    transfer_sub: Option<String>,
+    pub aud: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub exp: Option<usize>,
+    pub iat: Option<usize>,
+    pub is_private_email: Option<bool>,
+    pub iss: Option<String>,
+    pub nonce: Option<String>,
+    pub nonce_supported: Option<bool>,
+    pub real_user_status: Option<u8>,
+    pub sub: Option<String>,
+    pub transfer_sub: Option<String>,
 }
 
 /// Claims extracted from a Google ID token.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GoogleTokenClaims {
-    aud: Option<String>,
-    email: Option<String>,
-    email_verified: Option<bool>,
-    exp: Option<usize>,
-    family_name: Option<String>,
-    given_name: Option<String>,
-    iat: Option<usize>,
-    iss: Option<String>,
-    name: Option<String>,
-    picture: Option<String>,
-    sub: Option<String>,
+    pub aud: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub exp: Option<usize>,
+    pub family_name: Option<String>,
+    pub given_name: Option<String>,
+    pub iat: Option<usize>,
+    pub iss: Option<String>,
+    pub name: Option<String>,
+    pub picture: Option<String>,
+    pub sub: Option<String>,
 }
 
 /// In-memory cache for Apple's JWKS (JSON Web Key Set).

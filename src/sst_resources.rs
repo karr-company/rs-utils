@@ -11,14 +11,14 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(tarpaulin_include))]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Table {
-    name: String,
+    pub name: String,
 }
 
 /// SST S3 Bucket Resource
 #[cfg(not(tarpaulin_include))]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Bucket {
-    name: String,
+    pub name: String,
 }
 
 /// SST Secret Resource
