@@ -55,3 +55,17 @@ pub struct UserPoolClient {
 pub struct IdentityPool {
     pub id: String,
 }
+
+/// SST Email Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Email {
+    pub sender: String,
+}
+
+/// SST SNS Topic Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Topic {
+    pub arn: String,
+}

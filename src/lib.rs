@@ -38,4 +38,4 @@ pub use validation_utils::{is_valid_email, is_valid_phone_number, verify_apple_i
 
 pub mod sst_resources;
 
-pub use sst_resources::{Bucket, Table, Secret, Queue, UserPool, UserPoolClient, IdentityPool};
+pub use sst_resources::{Bucket, Table, Secret, Queue, UserPool, UserPoolClient, IdentityPool, Email, Topic};
