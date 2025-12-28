@@ -18,7 +18,11 @@
 //! ```
 use std::sync::OnceLock;
 
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header, errors::ErrorKind, jwk::JwkSet};
+#[cfg(not(tarpaulin_include))]
+use jsonwebtoken::TokenData;
+use jsonwebtoken::{
+    Algorithm, DecodingKey, Validation, decode, decode_header, errors::ErrorKind, jwk::JwkSet,
+};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -302,6 +306,61 @@ pub async fn verify_apple_id_token(
     validation.set_issuer(&APPLE_ISSUERS);
 
     let token = decode::<AppleTokenClaims>(id_token, &decoding_key, &validation).map_err(|e| {
+        match e.kind() {
+            ErrorKind::ExpiredSignature => return AuthError::Expired,
+            ErrorKind::InvalidIssuer => return AuthError::InvalidIssuer,
+            ErrorKind::InvalidAudience => return AuthError::InvalidAudience,
+            ErrorKind::InvalidToken => return AuthError::InvalidToken,
+            ErrorKind::InvalidKeyFormat => return AuthError::KeyFetch,
+            _ => return AuthError::Jwt(e),
+        }
+    })?;
+
+    Ok(token.claims)
+}
+
+#[cfg(not(tarpaulin_include))]
+/**
+ * Verifies a Cognito ID token and returns its claims if valid.
+ * 
+ * # Arguments
+ * * `id_token` - The JWT to verify
+ * * `user_pool_id` - The Cognito User Pool ID
+ * * `client_id` - The expected Cognito App Client ID (audience)
+ * * `region` - The AWS region where the User Pool is located
+ * 
+ * # Returns
+ * `Ok(serde_json::Value)` if valid, or `AuthError` on failure
+ */
+pub async fn verify_cognito_id_token(
+    id_token: &str,
+    user_pool_id: &str,
+    client_id: &str,
+    region: &str,
+) -> Result<serde_json::Value, AuthError> {
+    let issuer_url: String = format!(
+        "https://cognito-idp.{}.amazonaws.com/{}",
+        region, user_pool_id
+    ).into();
+    let jwks_url: String = format!("{}/.well-known/jwks.json", issuer_url).into();
+
+    let jwks = reqwest::get(jwks_url)
+        .await
+        .map_err(|_| AuthError::KeyFetch)?
+        .json::<JwkSet>()
+        .await
+        .map_err(|_| AuthError::KeyFetch)?;
+
+    let header = decode_header(id_token)?;
+    let kid = header.kid.ok_or(AuthError::InvalidToken)?;
+
+    let jwk = jwks.find(&kid).ok_or(AuthError::InvalidToken)?;
+    let decoding_key = DecodingKey::from_jwk(jwk)?;
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_audience(&[client_id]);
+    validation.set_issuer(&[&issuer_url]);
+
+    let token = decode::<serde_json::Value>(id_token, &decoding_key, &validation).map_err(|e| {
         match e.kind() {
             ErrorKind::ExpiredSignature => return AuthError::Expired,
             ErrorKind::InvalidIssuer => return AuthError::InvalidIssuer,

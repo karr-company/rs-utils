@@ -34,8 +34,13 @@ pub use json_utils::{
 
 pub mod validation_utils;
 
-pub use validation_utils::{is_valid_email, is_valid_phone_number, verify_apple_id_token, verify_google_id_token, AuthError, AppleTokenClaims, GoogleTokenClaims};
+pub use validation_utils::{
+    AppleTokenClaims, AuthError, GoogleTokenClaims, is_valid_email,
+    is_valid_phone_number, verify_apple_id_token, verify_cognito_id_token, verify_google_id_token,
+};
 
 pub mod sst_resources;
 
-pub use sst_resources::{Bucket, Table, Secret, Queue, UserPool, UserPoolClient, IdentityPool, Email, Topic};
+pub use sst_resources::{
+    Bucket, Email, IdentityPool, Queue, Secret, Table, Topic, UserPool, UserPoolClient,
+};
