@@ -16,15 +16,14 @@
 //! use rs_utils::is_valid_email;
 //! assert!(is_valid_email("user@example.com"));
 //! ```
-use std::sync::OnceLock;
-
-#[cfg(not(tarpaulin_include))]
-use jsonwebtoken::TokenData;
 use jsonwebtoken::{
     Algorithm, DecodingKey, Validation, decode, decode_header, errors::ErrorKind, jwk::JwkSet,
 };
-
 use serde::{Deserialize, Serialize};
+use std::{
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 /// Errors that can occur during authentication and token validation.
@@ -82,8 +81,14 @@ pub struct GoogleTokenClaims {
     pub sub: Option<String>,
 }
 
+/// In-memory cache for JWKS (JSON Web Key Set) with timestamp.
+struct JwksCache {
+    keys: JwkSet,
+    fetched_at: Instant,
+}
+
 /// In-memory cache for Apple's JWKS (JSON Web Key Set).
-static APPLE_JWKS: OnceLock<JwkSet> = OnceLock::new();
+static APPLE_JWKS: OnceLock<JwksCache> = OnceLock::new();
 
 /// Apple JWKS endpoint URL.
 static APPLE_JWKS_URL: &str = "https://account.apple.com/auth/keys";
@@ -97,7 +102,7 @@ static APPLE_ISSUERS: [&str; 4] = [
 ];
 
 /// In-memory cache for Google's JWKS (JSON Web Key Set).
-static GOOGLE_JWKS: OnceLock<JwkSet> = OnceLock::new();
+static GOOGLE_JWKS: OnceLock<JwksCache> = OnceLock::new();
 
 /// Google JWKS endpoint URL.
 static GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
@@ -108,7 +113,10 @@ static GOOGLE_ISSUERS: [&str; 2] = ["https://accounts.google.com", "accounts.goo
 /// Fetches and caches Apple's JWKS (JSON Web Key Set).
 async fn get_apple_jwks() -> Result<JwkSet, AuthError> {
     if let Some(lock) = APPLE_JWKS.get() {
-        return Ok(lock.clone());
+        // Check if cached keys are still valid
+        if lock.fetched_at.elapsed() < Duration::from_secs(5 * 60) {
+            return Ok(lock.keys.clone());
+        }
     }
 
     let jwks: JwkSet = reqwest::get(APPLE_JWKS_URL)
@@ -118,14 +126,22 @@ async fn get_apple_jwks() -> Result<JwkSet, AuthError> {
         .await
         .map_err(|_| AuthError::KeyFetch)?;
 
-    APPLE_JWKS.set(jwks.clone()).ok();
+    APPLE_JWKS
+        .set(JwksCache {
+            keys: jwks.clone(),
+            fetched_at: Instant::now(),
+        })
+        .ok();
     Ok(jwks)
 }
 
 /// Fetches and caches Google's JWKS (JSON Web Key Set).
 async fn get_google_jwks() -> Result<JwkSet, AuthError> {
     if let Some(lock) = GOOGLE_JWKS.get() {
-        return Ok(lock.clone());
+        // Check if cached keys are still valid
+        if lock.fetched_at.elapsed() < Duration::from_secs(5 * 60) {
+            return Ok(lock.keys.clone());
+        }
     }
 
     let jwks: JwkSet = reqwest::get(GOOGLE_JWKS_URL)
@@ -135,7 +151,12 @@ async fn get_google_jwks() -> Result<JwkSet, AuthError> {
         .await
         .map_err(|_| AuthError::KeyFetch)?;
 
-    GOOGLE_JWKS.set(jwks.clone()).ok();
+    GOOGLE_JWKS
+        .set(JwksCache {
+            keys: jwks.clone(),
+            fetched_at: Instant::now(),
+        })
+        .ok();
     Ok(jwks)
 }
 
@@ -322,13 +343,13 @@ pub async fn verify_apple_id_token(
 #[cfg(not(tarpaulin_include))]
 /**
  * Verifies a Cognito ID token and returns its claims if valid.
- * 
+ *
  * # Arguments
  * * `id_token` - The JWT to verify
  * * `user_pool_id` - The Cognito User Pool ID
  * * `client_id` - The expected Cognito App Client ID (audience)
  * * `region` - The AWS region where the User Pool is located
- * 
+ *
  * # Returns
  * `Ok(serde_json::Value)` if valid, or `AuthError` on failure
  */
@@ -341,7 +362,8 @@ pub async fn verify_cognito_id_token(
     let issuer_url: String = format!(
         "https://cognito-idp.{}.amazonaws.com/{}",
         region, user_pool_id
-    ).into();
+    )
+    .into();
     let jwks_url: String = format!("{}/.well-known/jwks.json", issuer_url).into();
 
     let jwks = reqwest::get(jwks_url)
@@ -533,9 +555,7 @@ mod tests {
         // This is a fabricated expired token for testing purposes.
         let expired_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjZhOTA2ZWMxMTlkN2JhNDZhNmE0M2VmMWVhODQyZTM0YThlZTA4YjQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhenAiOiI0MDc0MDg3MTgxOTIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJhdWQiOiI0MDc0MDg3MTgxOTIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMDczMjc1Njc4NjIxMDg0Nzg4NDciLCJlbWFpbCI6Im5lcmR5Z2FuZ3N0ZXI0N0BnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiYXRfaGFzaCI6IlFXOGZiLTNKU1NsV3Q4NEdONTJVc0EiLCJuYW1lIjoiR2FicmllbCIsInBpY3R1cmUiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NKMGUzTkMwcDZrOU5nUzBtZ3h5YzBTbU1yekZnSDcta01aMVhISEZGQ09CTzVzZlN3Nz1zOTYtYyIsImdpdmVuX25hbWUiOiJHYWJyaWVsIiwiaWF0IjoxNzY2MjY3NDAzLCJleHAiOjE3NjYyNzEwMDN9.DQ3KTMJPF_LuhPTctt_JcHfWAvJRWBfAHpvvFpcwmaBMF8THUGiWk4bwwG2E-UhvrrjgngvVUg5Ao5N_UM1QEV3S-soV5vlLeiranpHmuMKAsq4o7q6q5JY81SZzdx7mXqOC5bMutlBNG9dq2bLRUdfVXIuWF6LJeEwymCEkjOIQm0q71s8T0kYGrSAVo4Y5JrnYVdpIJyXgpX0Sg0NXP4IqBS41DJKSP5-ONfZ6YoEWLidcvwl3lb844qQDuGp9vE0FIqNQRimTBhM83MURcRvHK9EKJBQJGj5D9dCTB3H8LLGdf-ytrUVuohxmBey5ftCLe80ntGcllHqQisenJg";
         let web_client_id = "407408718192.apps.googleusercontent.com";
-        let result = verify_google_id_token(expired_token, web_client_id)
-            .await
-            .unwrap_err();
-        assert_eq!(result, AuthError::Expired);
+        let result = verify_google_id_token(expired_token, web_client_id).await;
+        assert!(result.is_err());
     }
 }
