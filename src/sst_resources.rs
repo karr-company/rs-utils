@@ -69,3 +69,11 @@ pub struct Email {
 pub struct Topic {
     pub arn: String,
 }
+// SST Lambda Function Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Function {
+    pub arn: String,
+    pub name: String,
+    pub url: Option<String>,
+}

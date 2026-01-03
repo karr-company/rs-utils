@@ -35,14 +35,14 @@ pub use json_utils::{
 pub mod validation_utils;
 
 pub use validation_utils::{
-    AppleTokenClaims, AuthError, GoogleTokenClaims, is_valid_email,
-    is_valid_phone_number, verify_apple_id_token, verify_cognito_id_token, verify_google_id_token,
+    AppleTokenClaims, AuthError, GoogleTokenClaims, is_valid_email, is_valid_phone_number,
+    verify_apple_id_token, verify_cognito_id_token, verify_google_id_token,
 };
 
 pub mod sst_resources;
 
 pub use sst_resources::{
-    Bucket, Email, IdentityPool, Queue, Secret, Table, Topic, UserPool, UserPoolClient,
+    Bucket, Email, Function, IdentityPool, Queue, Secret, Table, Topic, UserPool, UserPoolClient,
 };
 
 #[derive(Debug)]
@@ -51,8 +51,8 @@ pub enum TokenLabel {
     Soft,
 }
 
-mod token_map;
 mod stoplist;
+mod token_map;
 
 pub mod prompt_utils;
 pub use prompt_utils::safe_prompt;
