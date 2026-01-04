@@ -56,3 +56,8 @@ mod token_map;
 
 pub mod prompt_utils;
 pub use prompt_utils::safe_prompt;
+
+pub mod vehicle_utils;
+pub use vehicle_utils::{
+    Condition, ResultType, ResultValue, Rule, RuleEngine, Vehicle,
+};
