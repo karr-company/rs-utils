@@ -56,19 +56,26 @@ pub struct AppleTokenClaims {
     pub email_verified: Option<bool>,
     pub exp: Option<usize>,
     pub iat: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_private_email: Option<bool>,
     pub iss: Option<String>,
     pub nonce: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nonce_supported: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub real_user_status: Option<u8>,
     pub sub: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub transfer_sub: Option<String>,
 }
 
 /// Claims extracted from a Google ID token.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GoogleTokenClaims {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at_hash: Option<String>,
     pub aud: Option<String>,
+    pub azp: Option<String>,
     pub email: Option<String>,
     pub email_verified: Option<bool>,
     pub exp: Option<usize>,
@@ -77,6 +84,8 @@ pub struct GoogleTokenClaims {
     pub iat: Option<usize>,
     pub iss: Option<String>,
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<String>,
     pub picture: Option<String>,
     pub sub: Option<String>,
 }
@@ -284,8 +293,12 @@ pub async fn verify_google_id_token(
     let decoding_key = DecodingKey::from_jwk(jwk)?;
 
     let mut validation = Validation::new(Algorithm::RS256);
+
     validation.set_audience(&[client_id]);
     validation.set_issuer(&GOOGLE_ISSUERS);
+    // User ID token audience does not always match client_id
+    // See: https://docs.cloud.google.com/docs/authentication/token-types#user-id-tokens
+    validation.validate_aud = false;
 
     let token = decode::<GoogleTokenClaims>(id_token, &decoding_key, &validation).map_err(|e| {
         match e.kind() {
@@ -297,6 +310,10 @@ pub async fn verify_google_id_token(
             _ => return AuthError::Jwt(e),
         }
     })?;
+
+    if token.claims.azp.as_deref() != Some(client_id) {
+        return Err(AuthError::InvalidAudience);
+    }
 
     Ok(token.claims)
 }
