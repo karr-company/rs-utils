@@ -133,6 +133,16 @@ pub enum ResultValue {
     Class { class: String },
 }
 
+impl ResultValue {
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            ResultValue::Boolean(true) => true,
+            ResultValue::Boolean(false) => false,
+            ResultValue::Class { .. } => true,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Condition {
