@@ -29,7 +29,7 @@ pub mod json_utils;
 
 pub use json_utils::{
     attribute_value_to_json, convert_and_deserialize, empty_json_response, error_response,
-    item_to_json_map, json_response,
+    item_to_json_map, json_response, UploadWithFields
 };
 
 pub mod validation_utils;

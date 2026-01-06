@@ -12,6 +12,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
+/// Serde-compatible S3 Presigned upload
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadWithFields {
+    pub url: String,
+    pub fields: HashMap<String, String>,
+}
+
+impl UploadWithFields {
+    pub fn from(upload: s3::post_policy::PresignedPost) -> Self {
+        UploadWithFields {
+            url: upload.url,
+            fields: upload.fields,
+        }
+    }
+}
+
 /// Generates a JSON HTTP response with the given payload
 ///
 /// # Arguments
