@@ -16,6 +16,20 @@ pub struct Vehicle {
     pub engine_capacity: Option<u32>,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannedVehicleFine {
+    pub vrm: Option<String>,
+    pub issue_date: Option<String>,
+    pub penalty_after_days: Option<u64>,
+    pub pcn: Option<String>,
+    pub authority: Option<String>,
+    pub base_price: Option<u64>,
+    pub penalty_price: Option<u64>,
+    pub reduced_price: Option<u64>,
+    pub reduced_before_days: Option<u64>,
+}
+
 #[derive(Debug, PartialEq, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum Operator {
