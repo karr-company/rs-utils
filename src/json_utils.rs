@@ -11,9 +11,10 @@ use lambda_http::{Body, Error as LambdaError, Response, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 /// Serde-compatible S3 Presigned upload
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadWithFields {
     pub url: String,

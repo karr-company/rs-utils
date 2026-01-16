@@ -54,6 +54,7 @@ use hex::decode as hex_decode;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::box_;
 use sodiumoxide::crypto::box_::{Nonce, PublicKey, SecretKey};
+use utoipa::ToSchema;
 
 /// Decodes a Base64 string into bytes
 fn decode_b64(input: &str) -> Result<Vec<u8>> {
@@ -179,7 +180,7 @@ pub fn gen_nonce_b64() -> String {
 }
 
 /// Represents an encrypted payload with nonce
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct EncryptedMessage {
     /// Base64-encoded ciphertext
     pub ciphertext: String,
@@ -188,7 +189,7 @@ pub struct EncryptedMessage {
 }
 
 /// Represents an encrypted payload with nonce and ephemeral public key
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EncryptedEphemeralMessage {
     /// Base64-encoded ciphertext
