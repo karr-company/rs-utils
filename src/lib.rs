@@ -42,7 +42,7 @@ pub use validation_utils::{
 pub mod sst_resources;
 
 pub use sst_resources::{
-    Bucket, Email, Function, IdentityPool, Queue, Secret, Table, Topic, UserPool, UserPoolClient,
+    Bucket, Email, Function, IdentityPool, Queue, Secret, StepFunction, Table, Topic, UserPool, UserPoolClient,
 };
 
 #[derive(Debug)]
