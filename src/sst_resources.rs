@@ -81,7 +81,6 @@ pub struct StepFunction {
 #[cfg(not(tarpaulin_include))]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Function {
-    pub arn: String,
     pub name: String,
     pub url: Option<String>,
 }
