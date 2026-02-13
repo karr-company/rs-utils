@@ -43,7 +43,7 @@ pub fn safe_prompt(prompt: String, safety_threshold: u16) -> anyhow::Result<Stri
     let token_count = filtered_tokens.len() as u32;
 
     if token_count == 0 {
-        return Err(anyhow::anyhow!("No valid tokens found in prompt"));
+        return Ok(normalized_prompt);
     }
 
     let mut critical_matches: u32 = 0;
@@ -104,7 +104,7 @@ mod tests {
         let prompt = "!!! ??? ...".to_string();
         let result = safe_prompt(prompt, 50);
         print!("{:?}", result);
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]
