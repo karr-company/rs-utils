@@ -25,6 +25,14 @@ pub use crypto_box::{
     gen_nonce_b64,
 };
 
+pub mod e2e_crypto;
+
+pub use e2e_crypto::{
+    E2eEncryptedMessage, E2eEncryptedRequest, E2eKeyPair,
+    decrypt_from_client, decrypt_server_response, encode_public_key,
+    encrypt_for_client, generate_keypair as generate_e2e_keypair,
+};
+
 pub mod json_utils;
 
 pub use json_utils::{
