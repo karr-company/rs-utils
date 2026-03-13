@@ -68,12 +68,11 @@
 
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, AeadCore, OsRng as AeadOsRng},
+    aead::{Aead, AeadCore, OsRng},
 };
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
-use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use utoipa::ToSchema;
@@ -283,7 +282,7 @@ pub fn encrypt_for_client(
         Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
 
     // Generate random 12-byte IV
-    let iv = Aes256Gcm::generate_nonce(&mut AeadOsRng);
+    let iv = Aes256Gcm::generate_nonce(&mut OsRng);
 
     // Encrypt with AES-GCM (ciphertext includes auth tag)
     let ciphertext_with_tag = cipher
