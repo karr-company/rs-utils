@@ -1,69 +1,56 @@
-//! E2E Crypto: Node.js-Compatible End-to-End Encryption
+//! E2E Encryption Module
 //!
-//! This module provides true end-to-end encryption using standard algorithms
-//! compatible with Node.js crypto and Web Crypto API:
+//! Provides secure end-to-end encryption using:
+//! - X25519 ECDH for key exchange (ephemeral keys per message)
+//! - HKDF-SHA256 for key derivation
+//! - AES-256-GCM for authenticated encryption
 //!
-//! - **Key Exchange**: X25519 ECDH (Curve25519 Diffie-Hellman)
-//! - **Key Derivation**: HKDF-SHA256
-//! - **Encryption**: AES-256-GCM (authenticated encryption)
+//! This module is NIST-compliant and compatible with Node.js `crypto` module
+//! for cross-platform E2E encryption.
 //!
 //! ## Security Model
 //!
-//! 1. Client generates an ephemeral X25519 keypair per session/request
-//! 2. Client sends its ephemeral PUBLIC key with the request (header or body)
-//! 3. Server generates its own ephemeral keypair per response
-//! 4. Server computes shared secret: ECDH(server_sk, client_pk)
-//! 5. Server derives AES key via HKDF(shared_secret, salt, info)
-//! 6. Server encrypts response with AES-256-GCM
-//! 7. Server sends: { ciphertext, iv, authTag, serverPublicKey }
-//! 8. Client computes same shared secret: ECDH(client_sk, server_pk)
-//! 9. Client derives same AES key and decrypts
-//!
-//! ## Why This Is Secure
-//!
-//! - No secret key material is transmitted (only public keys)
-//! - Each response uses a fresh ephemeral keypair (forward secrecy)
-//! - AES-GCM provides both confidentiality and integrity
-//! - HKDF ensures proper key derivation from ECDH output
-//! - Compatible with MITM protection via JWT authentication layer
-//!
-//! ## Node.js Compatibility
-//!
-//! ```javascript
-//! const crypto = require('crypto');
-//!
-//! // Generate X25519 keypair
-//! const { publicKey, privateKey } = crypto.generateKeyPairSync('x25519');
-//!
-//! // Compute shared secret
-//! const sharedSecret = crypto.diffieHellman({
-//!   privateKey: clientPrivateKey,
-//!   publicKey: serverPublicKey
-//! });
-//!
-//! // Derive AES key via HKDF
-//! const aesKey = crypto.hkdfSync('sha256', sharedSecret, salt, info, 32);
-//!
-//! // Decrypt with AES-256-GCM
-//! const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
-//! decipher.setAuthTag(authTag);
-//! const plaintext = decipher.update(ciphertext) + decipher.final();
+//! ```text
+//! Client → Server:
+//! 1. Client generates ephemeral X25519 keypair
+//! 2. Client computes shared_secret = ECDH(ephemeral_secret, server_public)
+//! 3. Client derives AES key = HKDF(shared_secret, salt, info)
+//! 4. Client encrypts: ciphertext = AES-GCM(plaintext, key, random_nonce)
+//! 5. Client sends: {ciphertext, nonce, ephemeral_public_key}
+//! 6. Server computes: shared_secret = ECDH(server_secret, ephemeral_public)
+//! 7. Server derives same AES key and decrypts
 //! ```
 //!
-//! ## Example Usage (Rust Server)
+//! ## Example: Basic Encryption/Decryption
 //!
-//! ```rust
-//! use rs_utils::e2e_crypto::{E2eEncryptedMessage, encrypt_for_client, generate_keypair};
+//! ```rust,ignore
+//! use rs_utils::e2e_crypto::{generate_keypair, encrypt_for_recipient, decrypt_message, HkdfParams};
 //!
-//! // Client's public key from request header
-//! let client_pub_b64 = "base64_encoded_client_public_key";
+//! // Server generates static keypair (store private key securely)
+//! let server_keys = generate_keypair();
 //!
-//! // Encrypt response
-//! let plaintext = r#"{"customerId": "cus_xxx", "secret": "sensitive_data"}"#;
-//! let encrypted = encrypt_for_client(plaintext, client_pub_b64)?;
+//! // Client encrypts message for server
+//! let params = HkdfParams::new("e2e-v1-salt", "e2e-v1-aes-gcm-key");
+//! let encrypted = encrypt_for_recipient("Hello server!", &server_keys.public_key, &params).unwrap();
 //!
-//! // Send encrypted response (JSON serializable)
-//! let response_body = serde_json::to_string(&encrypted)?;
+//! // Server decrypts
+//! let plaintext = decrypt_message(&encrypted, &server_keys.private_key, &params).unwrap();
+//! assert_eq!(plaintext, "Hello server!");
+//! ```
+//!
+//! ## Example: API Key Generation
+//!
+//! ```rust,ignore
+//! use rs_utils::e2e_crypto::{generate_api_key, verify_api_key_secret};
+//!
+//! let pepper = "secret-pepper-from-env";
+//! let bundle = generate_api_key(pepper);
+//!
+//! // Store in database: bundle.key_id, bundle.hashed_secret
+//! // Give to client: bundle.full_key
+//!
+//! // Later, verify incoming key:
+//! let is_valid = verify_api_key_secret(&bundle.secret, pepper, &bundle.hashed_secret);
 //! ```
 
 use aes_gcm::{
@@ -74,82 +61,98 @@ use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 
-/// HKDF info string for context binding
-const HKDF_INFO: &[u8] = b"karr-e2e-aes-key-v1";
+const AES_KEY_LENGTH: usize = 32;
 
-/// HKDF salt (can be empty for HKDF, but we use a fixed value for domain separation)
-const HKDF_SALT: &[u8] = b"karr-e2e-salt-v1";
+// ============ Types ============
 
-// Types
-
-/// X25519 keypair for ECDH key exchange
-#[derive(Clone)]
+/// X25519 keypair for E2E encryption
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct E2eKeyPair {
     /// Base64-encoded public key (32 bytes)
     pub public_key: String,
-    /// Raw secret key bytes (for internal use)
-    secret_key: [u8; 32],
+    /// Base64-encoded private key (32 bytes)
+    pub private_key: String,
 }
 
-impl E2eKeyPair {
-    /// Get the secret key for ECDH computation
-    pub fn secret_key_bytes(&self) -> &[u8; 32] {
-        &self.secret_key
+/// Encrypted message with ephemeral public key
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct E2eEncryptedMessage {
+    /// Base64-encoded ciphertext (includes auth tag)
+    pub ciphertext: String,
+    /// Base64-encoded nonce/IV (12 bytes)
+    pub nonce: String,
+    /// Base64-encoded ephemeral public key (32 bytes)
+    pub ephemeral_public_key: String,
+}
+
+/// HKDF parameters for key derivation
+///
+/// These parameters must be identical across all platforms (Rust, Node.js, React Native)
+/// for successful encryption/decryption interoperability.
+#[derive(Debug, Clone)]
+pub struct HkdfParams<'a> {
+    /// Salt for HKDF extraction step
+    pub salt: &'a [u8],
+    /// Info/context for HKDF expansion step
+    pub info: &'a [u8],
+}
+
+impl<'a> HkdfParams<'a> {
+    /// Creates HKDF parameters from string values
+    ///
+    /// # Arguments
+    /// * `salt` - Domain separation salt (e.g., "e2e-v1-salt")
+    /// * `info` - Context binding info (e.g., "e2e-v1-aes-gcm-key")
+    pub fn new(salt: &'a str, info: &'a str) -> Self {
+        Self {
+            salt: salt.as_bytes(),
+            info: info.as_bytes(),
+        }
+    }
+
+    /// Creates HKDF parameters from raw byte slices
+    pub fn from_bytes(salt: &'a [u8], info: &'a [u8]) -> Self {
+        Self { salt, info }
     }
 }
 
-/// Encrypted message format for E2E responses
+/// Generated API key components
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyBundle {
+    /// Unique key identifier (URL-safe base64, 16 bytes)
+    pub key_id: String,
+    /// Secret portion (URL-safe base64, 32 bytes)
+    pub secret: String,
+    /// Full key in format "key_id.secret"
+    pub full_key: String,
+    /// SHA256 hash of (secret + pepper), hex-encoded
+    pub hashed_secret: String,
+}
+
+// ============ Key Generation ============
+
+/// Generates a new X25519 keypair for E2E encryption
 ///
-/// This structure is JSON-serializable and contains all information
-/// needed for the client to decrypt the message.
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct E2eEncryptedMessage {
-    /// Base64-encoded AES-GCM ciphertext
-    pub ciphertext: String,
-
-    /// Base64-encoded 12-byte IV/nonce
-    pub iv: String,
-
-    /// Base64-encoded 16-byte authentication tag
-    pub auth_tag: String,
-
-    /// Base64-encoded server's ephemeral X25519 public key (32 bytes)
-    pub server_public_key: String,
-}
-
-/// Request format when client sends encrypted data
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct E2eEncryptedRequest {
-    /// Base64-encoded AES-GCM ciphertext
-    pub ciphertext: String,
-
-    /// Base64-encoded 12-byte IV/nonce
-    pub iv: String,
-
-    /// Base64-encoded 16-byte authentication tag
-    pub auth_tag: String,
-
-    /// Base64-encoded client's ephemeral X25519 public key (32 bytes)
-    pub client_public_key: String,
-}
-
-// Key Generation
-
-/// Generates a new X25519 keypair for ECDH key exchange
+/// The keypair should be generated once for the server and stored securely.
+/// The public key can be distributed to clients.
 ///
 /// # Returns
-/// An `E2eKeyPair` containing the public key (base64) and secret key bytes
+/// An `E2eKeyPair` with base64-encoded public and private keys
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
+/// use rs_utils::e2e_crypto::generate_keypair;
+///
 /// let keypair = generate_keypair();
 /// println!("Public key: {}", keypair.public_key);
+/// // Store keypair.private_key securely (env var, secrets manager)
 /// ```
 pub fn generate_keypair() -> E2eKeyPair {
     let secret = StaticSecret::random_from_rng(OsRng);
@@ -157,408 +160,576 @@ pub fn generate_keypair() -> E2eKeyPair {
 
     E2eKeyPair {
         public_key: URL_SAFE_NO_PAD.encode(public.as_bytes()),
-        secret_key: secret.to_bytes(),
+        private_key: URL_SAFE_NO_PAD.encode(secret.as_bytes()),
     }
 }
 
-/// Generates an ephemeral keypair (one-time use)
+// ============ Encryption ============
+
+/// Encrypts a message for a recipient using their public key
 ///
-/// Uses `EphemeralSecret` which is consumed on use, providing forward secrecy.
-fn generate_ephemeral_keypair() -> (EphemeralSecret, PublicKey) {
-    let secret = EphemeralSecret::random_from_rng(OsRng);
-    let public = PublicKey::from(&secret);
-    (secret, public)
-}
-
-// ECDH + HKDF Key Derivation
-
-/// Computes shared secret and derives AES-256 key
-///
-/// # Arguments
-/// * `our_secret` - Our X25519 secret key bytes
-/// * `their_public_b64` - Their base64-encoded public key
-///
-/// # Returns
-/// 32-byte AES-256 key derived via HKDF-SHA256
-fn derive_shared_key(our_secret: &[u8; 32], their_public_b64: &str) -> Result<[u8; 32]> {
-    // Decode their public key
-    let their_public_bytes = URL_SAFE_NO_PAD
-        .decode(their_public_b64)
-        .map_err(|_| anyhow!("Invalid base64 public key"))?;
-
-    if their_public_bytes.len() != 32 {
-        return Err(anyhow!(
-            "Invalid public key length: expected 32, got {}",
-            their_public_bytes.len()
-        ));
-    }
-
-    let their_public: [u8; 32] = their_public_bytes
-        .try_into()
-        .map_err(|_| anyhow!("Failed to convert public key bytes"))?;
-
-    // Compute ECDH shared secret
-    let our_static = StaticSecret::from(*our_secret);
-    let their_pk = PublicKey::from(their_public);
-    let shared_secret = our_static.diffie_hellman(&their_pk);
-
-    // Derive AES key via HKDF-SHA256
-    let hkdf = Hkdf::<Sha256>::new(Some(HKDF_SALT), shared_secret.as_bytes());
-    let mut aes_key = [0u8; 32];
-    hkdf.expand(HKDF_INFO, &mut aes_key)
-        .map_err(|_| anyhow!("HKDF expansion failed"))?;
-
-    Ok(aes_key)
-}
-
-/// Computes shared secret from ephemeral secret (consuming it)
-fn derive_shared_key_ephemeral(
-    our_secret: EphemeralSecret,
-    their_public_b64: &str,
-) -> Result<[u8; 32]> {
-    // Decode their public key
-    let their_public_bytes = URL_SAFE_NO_PAD
-        .decode(their_public_b64)
-        .map_err(|_| anyhow!("Invalid base64 public key"))?;
-
-    if their_public_bytes.len() != 32 {
-        return Err(anyhow!(
-            "Invalid public key length: expected 32, got {}",
-            their_public_bytes.len()
-        ));
-    }
-
-    let their_public: [u8; 32] = their_public_bytes
-        .try_into()
-        .map_err(|_| anyhow!("Failed to convert public key bytes"))?;
-
-    // Compute ECDH shared secret (consumes ephemeral secret)
-    let their_pk = PublicKey::from(their_public);
-    let shared_secret = our_secret.diffie_hellman(&their_pk);
-
-    // Derive AES key via HKDF-SHA256
-    let hkdf = Hkdf::<Sha256>::new(Some(HKDF_SALT), shared_secret.as_bytes());
-    let mut aes_key = [0u8; 32];
-    hkdf.expand(HKDF_INFO, &mut aes_key)
-        .map_err(|_| anyhow!("HKDF expansion failed"))?;
-
-    Ok(aes_key)
-}
-
-// Encryption (Server → Client)
-
-/// Encrypts a message for a specific client using their public key
-///
-/// This is the primary function for server-side response encryption.
-/// It generates a fresh ephemeral keypair for each encryption, providing
-/// forward secrecy.
+/// Uses ephemeral X25519 key exchange, HKDF-SHA256, and AES-256-GCM.
+/// Each call generates a new ephemeral keypair for forward secrecy.
 ///
 /// # Arguments
 /// * `plaintext` - UTF-8 string to encrypt
-/// * `client_public_key_b64` - Client's base64-encoded X25519 public key
+/// * `recipient_public_key_b64` - Recipient's base64-encoded X25519 public key
+/// * `hkdf_params` - HKDF salt and info parameters
 ///
 /// # Returns
-/// `E2eEncryptedMessage` containing ciphertext, IV, auth tag, and server public key
+/// An `E2eEncryptedMessage` containing ciphertext, nonce, and ephemeral public key
+///
+/// # Errors
+/// Returns an error if the public key is invalid or encryption fails
 ///
 /// # Example
-/// ```rust
-/// let encrypted = encrypt_for_client(
-///     r#"{"secret": "data"}"#,
-///     "base64_client_public_key"
+/// ```rust,ignore
+/// use rs_utils::e2e_crypto::{encrypt_for_recipient, HkdfParams};
+///
+/// let params = HkdfParams::new("e2e-v1-salt", "e2e-v1-aes-gcm-key");
+/// let encrypted = encrypt_for_recipient(
+///     "Hello, World!",
+///     &server_public_key,
+///     &params
 /// )?;
 /// ```
-pub fn encrypt_for_client(
+pub fn encrypt_for_recipient(
     plaintext: &str,
-    client_public_key_b64: &str,
+    recipient_public_key_b64: &str,
+    hkdf_params: &HkdfParams,
 ) -> Result<E2eEncryptedMessage> {
-    // Generate ephemeral server keypair
-    let (server_secret, server_public) = generate_ephemeral_keypair();
+    // Decode recipient's public key
+    let recipient_pk_bytes = URL_SAFE_NO_PAD
+        .decode(recipient_public_key_b64)
+        .map_err(|_| anyhow!("Invalid recipient public key base64"))?;
 
-    // Derive shared AES key
-    let aes_key = derive_shared_key_ephemeral(server_secret, client_public_key_b64)?;
+    let recipient_pk_array: [u8; 32] = recipient_pk_bytes
+        .try_into()
+        .map_err(|_| anyhow!("Recipient public key must be 32 bytes"))?;
 
-    // Create AES-256-GCM cipher
-    let cipher =
-        Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
+    let recipient_public_key = PublicKey::from(recipient_pk_array);
 
-    // Generate random 12-byte IV
-    let iv = Aes256Gcm::generate_nonce(&mut OsRng);
+    // Generate ephemeral keypair
+    let ephemeral_secret = EphemeralSecret::random_from_rng(OsRng);
+    let ephemeral_public = PublicKey::from(&ephemeral_secret);
 
-    // Encrypt with AES-GCM (ciphertext includes auth tag)
-    let ciphertext_with_tag = cipher
-        .encrypt(&iv, plaintext.as_bytes())
-        .map_err(|_| anyhow!("AES-GCM encryption failed"))?;
+    // ECDH → shared secret
+    let shared_secret = ephemeral_secret.diffie_hellman(&recipient_public_key);
 
-    // Split ciphertext and auth tag (last 16 bytes)
-    let (ciphertext, auth_tag) = ciphertext_with_tag.split_at(ciphertext_with_tag.len() - 16);
+    // HKDF → AES key
+    let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
+
+    // AES-256-GCM encrypt
+    let cipher = Aes256Gcm::new_from_slice(&aes_key)
+        .map_err(|_| anyhow!("Failed to create AES cipher"))?;
+
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext.as_bytes())
+        .map_err(|_| anyhow!("Encryption failed"))?;
 
     Ok(E2eEncryptedMessage {
-        ciphertext: URL_SAFE_NO_PAD.encode(ciphertext),
-        iv: URL_SAFE_NO_PAD.encode(iv.as_slice()),
-        auth_tag: URL_SAFE_NO_PAD.encode(auth_tag),
-        server_public_key: URL_SAFE_NO_PAD.encode(server_public.as_bytes()),
+        ciphertext: URL_SAFE_NO_PAD.encode(&ciphertext),
+        nonce: URL_SAFE_NO_PAD.encode(&nonce),
+        ephemeral_public_key: URL_SAFE_NO_PAD.encode(ephemeral_public.as_bytes()),
     })
 }
 
-// Decryption (Client → Server)
-
-/// Decrypts a message from a client
+/// Encrypts raw bytes for a recipient using their public key
 ///
-/// Used when the server needs to decrypt client-encrypted requests.
+/// Same as `encrypt_for_recipient` but accepts raw bytes instead of a string.
 ///
 /// # Arguments
-/// * `encrypted` - The encrypted request from client
-/// * `server_secret_key` - Server's static secret key bytes
-///
-/// # Returns
-/// Decrypted plaintext string
-pub fn decrypt_from_client(
-    encrypted: &E2eEncryptedRequest,
-    server_secret_key: &[u8; 32],
-) -> Result<String> {
-    // Derive shared AES key
-    let aes_key = derive_shared_key(server_secret_key, &encrypted.client_public_key)?;
+/// * `plaintext` - Raw bytes to encrypt
+/// * `recipient_public_key_b64` - Recipient's base64-encoded X25519 public key
+/// * `hkdf_params` - HKDF salt and info parameters
+pub fn encrypt_bytes_for_recipient(
+    plaintext: &[u8],
+    recipient_public_key_b64: &str,
+    hkdf_params: &HkdfParams,
+) -> Result<E2eEncryptedMessage> {
+    let recipient_pk_bytes = URL_SAFE_NO_PAD
+        .decode(recipient_public_key_b64)
+        .map_err(|_| anyhow!("Invalid recipient public key base64"))?;
 
-    // Decode components
-    let ciphertext = URL_SAFE_NO_PAD
-        .decode(&encrypted.ciphertext)
-        .map_err(|_| anyhow!("Invalid base64 ciphertext"))?;
-    let iv_bytes = URL_SAFE_NO_PAD
-        .decode(&encrypted.iv)
-        .map_err(|_| anyhow!("Invalid base64 IV"))?;
-    let auth_tag = URL_SAFE_NO_PAD
-        .decode(&encrypted.auth_tag)
-        .map_err(|_| anyhow!("Invalid base64 auth tag"))?;
-
-    if iv_bytes.len() != 12 {
-        return Err(anyhow!(
-            "Invalid IV length: expected 12, got {}",
-            iv_bytes.len()
-        ));
-    }
-    if auth_tag.len() != 16 {
-        return Err(anyhow!(
-            "Invalid auth tag length: expected 16, got {}",
-            auth_tag.len()
-        ));
-    }
-
-    // Reconstruct ciphertext with tag for aes-gcm
-    let mut ciphertext_with_tag = ciphertext;
-    ciphertext_with_tag.extend_from_slice(&auth_tag);
-
-    // Create cipher and decrypt
-    let cipher =
-        Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
-    let nonce = Nonce::from_slice(&iv_bytes);
-
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext_with_tag.as_slice())
-        .map_err(|_| anyhow!("AES-GCM decryption failed - invalid auth tag or corrupted data"))?;
-
-    String::from_utf8(plaintext).map_err(|_| anyhow!("Decrypted data is not valid UTF-8"))
-}
-
-/// Decrypts a server response (client-side operation, included for testing)
-///
-/// This mirrors what the client does to decrypt server responses.
-///
-/// # Arguments
-/// * `encrypted` - The encrypted message from server
-/// * `client_secret_key` - Client's secret key bytes
-///
-/// # Returns
-/// Decrypted plaintext string
-pub fn decrypt_server_response(
-    encrypted: &E2eEncryptedMessage,
-    client_secret_key: &[u8; 32],
-) -> Result<String> {
-    // Derive shared AES key using server's public key
-    let aes_key = derive_shared_key(client_secret_key, &encrypted.server_public_key)?;
-
-    // Decode components
-    let ciphertext = URL_SAFE_NO_PAD
-        .decode(&encrypted.ciphertext)
-        .map_err(|_| anyhow!("Invalid base64 ciphertext"))?;
-    let iv_bytes = URL_SAFE_NO_PAD
-        .decode(&encrypted.iv)
-        .map_err(|_| anyhow!("Invalid base64 IV"))?;
-    let auth_tag = URL_SAFE_NO_PAD
-        .decode(&encrypted.auth_tag)
-        .map_err(|_| anyhow!("Invalid base64 auth tag"))?;
-
-    if iv_bytes.len() != 12 {
-        return Err(anyhow!(
-            "Invalid IV length: expected 12, got {}",
-            iv_bytes.len()
-        ));
-    }
-    if auth_tag.len() != 16 {
-        return Err(anyhow!(
-            "Invalid auth tag length: expected 16, got {}",
-            auth_tag.len()
-        ));
-    }
-
-    // Reconstruct ciphertext with tag
-    let mut ciphertext_with_tag = ciphertext;
-    ciphertext_with_tag.extend_from_slice(&auth_tag);
-
-    // Create cipher and decrypt
-    let cipher =
-        Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
-    let nonce = Nonce::from_slice(&iv_bytes);
-
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext_with_tag.as_slice())
-        .map_err(|_| anyhow!("AES-GCM decryption failed - invalid auth tag or corrupted data"))?;
-
-    String::from_utf8(plaintext).map_err(|_| anyhow!("Decrypted data is not valid UTF-8"))
-}
-
-// Utility Functions
-
-/// Encodes a public key to base64 (URL-safe, no padding)
-pub fn encode_public_key(key: &[u8; 32]) -> String {
-    URL_SAFE_NO_PAD.encode(key)
-}
-
-/// Decodes a base64 public key
-pub fn decode_public_key(key_b64: &str) -> Result<[u8; 32]> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(key_b64)
-        .map_err(|_| anyhow!("Invalid base64 public key"))?;
-
-    if bytes.len() != 32 {
-        return Err(anyhow!(
-            "Invalid public key length: expected 32, got {}",
-            bytes.len()
-        ));
-    }
-
-    bytes
+    let recipient_pk_array: [u8; 32] = recipient_pk_bytes
         .try_into()
-        .map_err(|_| anyhow!("Failed to convert public key bytes"))
+        .map_err(|_| anyhow!("Recipient public key must be 32 bytes"))?;
+
+    let recipient_public_key = PublicKey::from(recipient_pk_array);
+
+    let ephemeral_secret = EphemeralSecret::random_from_rng(OsRng);
+    let ephemeral_public = PublicKey::from(&ephemeral_secret);
+
+    let shared_secret = ephemeral_secret.diffie_hellman(&recipient_public_key);
+    let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
+
+    let cipher = Aes256Gcm::new_from_slice(&aes_key)
+        .map_err(|_| anyhow!("Failed to create AES cipher"))?;
+
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext)
+        .map_err(|_| anyhow!("Encryption failed"))?;
+
+    Ok(E2eEncryptedMessage {
+        ciphertext: URL_SAFE_NO_PAD.encode(&ciphertext),
+        nonce: URL_SAFE_NO_PAD.encode(&nonce),
+        ephemeral_public_key: URL_SAFE_NO_PAD.encode(ephemeral_public.as_bytes()),
+    })
 }
 
-// Tests
+// ============ Decryption ============
+
+/// Decrypts a message using the recipient's private key
+///
+/// # Arguments
+/// * `encrypted` - The encrypted message containing ciphertext, nonce, and ephemeral public key
+/// * `recipient_private_key_b64` - Recipient's base64-encoded X25519 private key
+/// * `hkdf_params` - HKDF salt and info parameters (must match encryption)
+///
+/// # Returns
+/// The decrypted UTF-8 string
+///
+/// # Errors
+/// Returns an error if decryption fails (wrong key, tampered data, or mismatched HKDF params)
+///
+/// # Example
+/// ```rust,ignore
+/// use rs_utils::e2e_crypto::{decrypt_message, HkdfParams};
+///
+/// let params = HkdfParams::new("e2e-v1-salt", "e2e-v1-aes-gcm-key");
+/// let plaintext = decrypt_message(&encrypted, &server_private_key, &params)?;
+/// ```
+pub fn decrypt_message(
+    encrypted: &E2eEncryptedMessage,
+    recipient_private_key_b64: &str,
+    hkdf_params: &HkdfParams,
+) -> Result<String> {
+    let decrypted_bytes = decrypt_message_bytes(encrypted, recipient_private_key_b64, hkdf_params)?;
+
+    String::from_utf8(decrypted_bytes)
+        .map_err(|_| anyhow!("Decrypted data is not valid UTF-8"))
+}
+
+/// Decrypts a message to raw bytes using the recipient's private key
+///
+/// Same as `decrypt_message` but returns raw bytes instead of a string.
+pub fn decrypt_message_bytes(
+    encrypted: &E2eEncryptedMessage,
+    recipient_private_key_b64: &str,
+    hkdf_params: &HkdfParams,
+) -> Result<Vec<u8>> {
+    // Decode recipient's private key
+    let recipient_sk_bytes = URL_SAFE_NO_PAD
+        .decode(recipient_private_key_b64)
+        .map_err(|_| anyhow!("Invalid recipient private key base64"))?;
+
+    let recipient_sk_array: [u8; 32] = recipient_sk_bytes
+        .try_into()
+        .map_err(|_| anyhow!("Recipient private key must be 32 bytes"))?;
+
+    let recipient_secret = StaticSecret::from(recipient_sk_array);
+
+    // Decode ephemeral public key
+    let ephemeral_pk_bytes = URL_SAFE_NO_PAD
+        .decode(&encrypted.ephemeral_public_key)
+        .map_err(|_| anyhow!("Invalid ephemeral public key base64"))?;
+
+    let ephemeral_pk_array: [u8; 32] = ephemeral_pk_bytes
+        .try_into()
+        .map_err(|_| anyhow!("Ephemeral public key must be 32 bytes"))?;
+
+    let ephemeral_public_key = PublicKey::from(ephemeral_pk_array);
+
+    // ECDH → shared secret
+    let shared_secret = recipient_secret.diffie_hellman(&ephemeral_public_key);
+
+    // HKDF → AES key
+    let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
+
+    // Decode ciphertext and nonce
+    let ciphertext = URL_SAFE_NO_PAD
+        .decode(&encrypted.ciphertext)
+        .map_err(|_| anyhow!("Invalid ciphertext base64"))?;
+
+    let nonce_bytes = URL_SAFE_NO_PAD
+        .decode(&encrypted.nonce)
+        .map_err(|_| anyhow!("Invalid nonce base64"))?;
+
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    // AES-256-GCM decrypt
+    let cipher = Aes256Gcm::new_from_slice(&aes_key)
+        .map_err(|_| anyhow!("Failed to create AES cipher"))?;
+
+    cipher
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| anyhow!("Decryption failed - invalid ciphertext or authentication tag"))
+}
+
+/// Derives an AES-256 key from a shared secret using HKDF-SHA256
+fn derive_aes_key(shared_secret: &[u8], params: &HkdfParams) -> Result<[u8; AES_KEY_LENGTH]> {
+    let hk = Hkdf::<Sha256>::new(Some(params.salt), shared_secret);
+    let mut aes_key = [0u8; AES_KEY_LENGTH];
+
+    hk.expand(params.info, &mut aes_key)
+        .map_err(|_| anyhow!("HKDF expansion failed"))?;
+
+    Ok(aes_key)
+}
+
+// ============ API Key Generation ============
+
+/// Generates a new API key with ID, secret, and peppered hash
+///
+/// The key format is `{key_id}.{secret}` where:
+/// - `key_id`: 16 random bytes, URL-safe base64 encoded
+/// - `secret`: 32 random bytes, URL-safe base64 encoded
+/// - `hashed_secret`: SHA256(secret + pepper), hex encoded
+///
+/// # Arguments
+/// * `pepper` - Secret pepper value (from environment/secrets manager)
+///
+/// # Returns
+/// An `ApiKeyBundle` containing all key components
+///
+/// # Example
+/// ```rust,ignore
+/// use rs_utils::e2e_crypto::generate_api_key;
+///
+/// let pepper = std::env::var("AUTH_KEY_PEPPER").unwrap();
+/// let bundle = generate_api_key(&pepper);
+///
+/// // Store in database:
+/// // - Id: bundle.key_id
+/// // - Hashed: bundle.hashed_secret
+/// // - Status: "ACTIVE"
+///
+/// // Give to client:
+/// // - bundle.full_key
+/// ```
+pub fn generate_api_key(pepper: &str) -> ApiKeyBundle {
+    // Generate random bytes for key_id (16 bytes) and secret (32 bytes)
+    let mut key_id_bytes = [0u8; 16];
+    let mut secret_bytes = [0u8; 32];
+
+    getrandom::fill(&mut key_id_bytes).expect("Failed to generate random bytes for key_id");
+    getrandom::fill(&mut secret_bytes).expect("Failed to generate random bytes for secret");
+
+    let key_id = URL_SAFE_NO_PAD.encode(key_id_bytes);
+    let secret = URL_SAFE_NO_PAD.encode(secret_bytes);
+
+    // Hash: SHA256(secret + pepper)
+    let hashed_secret = hash_api_key_secret(&secret, pepper);
+
+    let full_key = format!("{}.{}", key_id, secret);
+
+    ApiKeyBundle {
+        key_id,
+        secret,
+        full_key,
+        hashed_secret,
+    }
+}
+
+/// Hashes an API key secret with a pepper using SHA256
+///
+/// Used for storing and verifying API keys.
+///
+/// # Arguments
+/// * `secret` - The secret portion of the API key
+/// * `pepper` - Secret pepper value (must be consistent)
+///
+/// # Returns
+/// Hex-encoded SHA256 hash
+pub fn hash_api_key_secret(secret: &str, pepper: &str) -> String {
+    let input = format!("{}{}", secret, pepper);
+    let hash = Sha256::digest(input.as_bytes());
+    hex::encode(hash)
+}
+
+/// Verifies an API key secret against a stored hash
+///
+/// Uses constant-time comparison to prevent timing attacks.
+///
+/// # Arguments
+/// * `secret` - The secret portion of the API key (from client request)
+/// * `pepper` - Secret pepper value
+/// * `stored_hash` - The hex-encoded hash stored in the database
+///
+/// # Returns
+/// `true` if the secret matches the stored hash
+///
+/// # Example
+/// ```rust,ignore
+/// use rs_utils::e2e_crypto::verify_api_key_secret;
+///
+/// // In your authorizer:
+/// let is_valid = verify_api_key_secret(auth_key_secret, &pepper, &stored_hash);
+/// if !is_valid {
+///     return Err("Invalid API key");
+/// }
+/// ```
+pub fn verify_api_key_secret(secret: &str, pepper: &str, stored_hash: &str) -> bool {
+    let computed_hash = hash_api_key_secret(secret, pepper);
+    // Constant-time comparison to prevent timing attacks
+    constant_time_eq(computed_hash.as_bytes(), stored_hash.as_bytes())
+}
+
+/// Parses an API key in "key_id.secret" format
+///
+/// # Arguments
+/// * `full_key` - The full API key string
+///
+/// # Returns
+/// A tuple of (key_id, secret) if valid, or an error
+///
+/// # Example
+/// ```rust,ignore
+/// use rs_utils::e2e_crypto::parse_api_key;
+///
+/// let (key_id, secret) = parse_api_key("abc123.xyz789")?;
+/// ```
+pub fn parse_api_key(full_key: &str) -> Result<(&str, &str)> {
+    let mut parts = full_key.splitn(2, '.');
+
+    let key_id = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("Invalid API key format: missing key_id"))?;
+
+    let secret = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("Invalid API key format: missing secret"))?;
+
+    Ok((key_id, secret))
+}
+
+/// Constant-time byte comparison to prevent timing attacks
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
+// ============ Tests ============
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const TEST_SALT: &str = "e2e-v1-salt";
+    const TEST_INFO: &str = "e2e-v1-aes-gcm-key";
+
     #[test]
     fn test_keypair_generation() {
-        let kp1 = generate_keypair();
-        let kp2 = generate_keypair();
+        let keypair = generate_keypair();
 
-        // Keys should be different
-        assert_ne!(kp1.public_key, kp2.public_key);
+        // Verify base64 decodes to 32 bytes
+        let pk_bytes = URL_SAFE_NO_PAD.decode(&keypair.public_key).unwrap();
+        let sk_bytes = URL_SAFE_NO_PAD.decode(&keypair.private_key).unwrap();
 
-        // Public key should be valid base64 of 32 bytes
-        let decoded = URL_SAFE_NO_PAD.decode(&kp1.public_key).unwrap();
-        assert_eq!(decoded.len(), 32);
+        assert_eq!(pk_bytes.len(), 32);
+        assert_eq!(sk_bytes.len(), 32);
     }
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        // Generate client keypair
-        let client_kp = generate_keypair();
+        let params = HkdfParams::new(TEST_SALT, TEST_INFO);
+        let recipient = generate_keypair();
+        let plaintext = "Hello, secure world! 🔐";
 
-        // Encrypt message for client
-        let plaintext = r#"{"secret": "sensitive_data", "amount": 1234}"#;
-        let encrypted = encrypt_for_client(plaintext, &client_kp.public_key).unwrap();
+        let encrypted = encrypt_for_recipient(plaintext, &recipient.public_key, &params).unwrap();
 
         // Verify encrypted message structure
         assert!(!encrypted.ciphertext.is_empty());
-        assert!(!encrypted.iv.is_empty());
-        assert!(!encrypted.auth_tag.is_empty());
-        assert!(!encrypted.server_public_key.is_empty());
+        assert!(!encrypted.nonce.is_empty());
+        assert!(!encrypted.ephemeral_public_key.is_empty());
 
-        // Decrypt on client side
-        let decrypted = decrypt_server_response(&encrypted, client_kp.secret_key_bytes()).unwrap();
+        let decrypted = decrypt_message(&encrypted, &recipient.private_key, &params).unwrap();
 
         assert_eq!(decrypted, plaintext);
     }
 
     #[test]
-    fn test_client_to_server_roundtrip() {
-        // Generate server and client keypairs
-        let server_kp = generate_keypair();
-        let _client_kp = generate_keypair();
+    fn test_encrypt_decrypt_bytes_roundtrip() {
+        let params = HkdfParams::new(TEST_SALT, TEST_INFO);
+        let recipient = generate_keypair();
+        let plaintext: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD];
 
-        // Simulate client encrypting a request
-        let plaintext = r#"{"action": "pay", "amount": 5000}"#;
+        let encrypted =
+            encrypt_bytes_for_recipient(&plaintext, &recipient.public_key, &params).unwrap();
 
-        // Client encrypts using server's public key
-        let encrypted = encrypt_for_client(plaintext, &server_kp.public_key).unwrap();
+        let decrypted =
+            decrypt_message_bytes(&encrypted, &recipient.private_key, &params).unwrap();
 
-        // Convert to request format
-        let request = E2eEncryptedRequest {
-            ciphertext: encrypted.ciphertext,
-            iv: encrypted.iv,
-            auth_tag: encrypted.auth_tag,
-            client_public_key: encrypted.server_public_key, // The "server" key is actually client's ephemeral
-        };
-
-        // Server decrypts
-        let decrypted = decrypt_from_client(&request, server_kp.secret_key_bytes()).unwrap();
         assert_eq!(decrypted, plaintext);
     }
 
     #[test]
-    fn test_wrong_key_fails() {
-        let client_kp = generate_keypair();
-        let wrong_kp = generate_keypair();
+    fn test_different_hkdf_params_fail_decrypt() {
+        let encrypt_params = HkdfParams::new("salt-v1", "info-v1");
+        let decrypt_params = HkdfParams::new("salt-v2", "info-v2");
 
-        let plaintext = "secret message";
-        let encrypted = encrypt_for_client(plaintext, &client_kp.public_key).unwrap();
+        let recipient = generate_keypair();
+        let plaintext = "Should fail to decrypt";
 
-        // Attempt decryption with wrong key should fail
-        let result = decrypt_server_response(&encrypted, wrong_kp.secret_key_bytes());
+        let encrypted =
+            encrypt_for_recipient(plaintext, &recipient.public_key, &encrypt_params).unwrap();
+
+        let result = decrypt_message(&encrypted, &recipient.private_key, &decrypt_params);
+
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_wrong_key_fails_decrypt() {
+        let params = HkdfParams::new(TEST_SALT, TEST_INFO);
+        let recipient = generate_keypair();
+        let wrong_recipient = generate_keypair();
+        let plaintext = "Secret message";
+
+        let encrypted = encrypt_for_recipient(plaintext, &recipient.public_key, &params).unwrap();
+
+        let result = decrypt_message(&encrypted, &wrong_recipient.private_key, &params);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ephemeral_keys_differ() {
+        let params = HkdfParams::new(TEST_SALT, TEST_INFO);
+        let recipient = generate_keypair();
+
+        let encrypted1 = encrypt_for_recipient("msg1", &recipient.public_key, &params).unwrap();
+        let encrypted2 = encrypt_for_recipient("msg2", &recipient.public_key, &params).unwrap();
+
+        // Each encryption should use different ephemeral keys
+        assert_ne!(
+            encrypted1.ephemeral_public_key,
+            encrypted2.ephemeral_public_key
+        );
+        assert_ne!(encrypted1.nonce, encrypted2.nonce);
     }
 
     #[test]
     fn test_tampered_ciphertext_fails() {
-        let client_kp = generate_keypair();
+        let params = HkdfParams::new(TEST_SALT, TEST_INFO);
+        let recipient = generate_keypair();
 
-        let plaintext = "secret message";
-        let mut encrypted = encrypt_for_client(plaintext, &client_kp.public_key).unwrap();
+        let mut encrypted =
+            encrypt_for_recipient("original message", &recipient.public_key, &params).unwrap();
 
         // Tamper with ciphertext
         let mut ciphertext_bytes = URL_SAFE_NO_PAD.decode(&encrypted.ciphertext).unwrap();
-        if !ciphertext_bytes.is_empty() {
-            ciphertext_bytes[0] ^= 0xFF;
-        }
+        ciphertext_bytes[0] ^= 0xFF;
         encrypted.ciphertext = URL_SAFE_NO_PAD.encode(&ciphertext_bytes);
 
-        // Decryption should fail due to auth tag mismatch
-        let result = decrypt_server_response(&encrypted, client_kp.secret_key_bytes());
+        let result = decrypt_message(&encrypted, &recipient.private_key, &params);
+
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_forward_secrecy() {
-        let client_kp = generate_keypair();
-        let plaintext = "same message";
+    fn test_api_key_generation() {
+        let pepper = "test-pepper-value";
+        let bundle = generate_api_key(pepper);
 
-        // Encrypt the same message twice
-        let encrypted1 = encrypt_for_client(plaintext, &client_kp.public_key).unwrap();
-        let encrypted2 = encrypt_for_client(plaintext, &client_kp.public_key).unwrap();
+        // Verify structure
+        assert!(!bundle.key_id.is_empty());
+        assert!(!bundle.secret.is_empty());
+        assert_eq!(
+            bundle.full_key,
+            format!("{}.{}", bundle.key_id, bundle.secret)
+        );
 
-        // Ciphertexts should be different (different ephemeral keys + IVs)
-        assert_ne!(encrypted1.ciphertext, encrypted2.ciphertext);
-        assert_ne!(encrypted1.server_public_key, encrypted2.server_public_key);
-        assert_ne!(encrypted1.iv, encrypted2.iv);
+        // Verify key_id is 16 bytes base64
+        let key_id_bytes = URL_SAFE_NO_PAD.decode(&bundle.key_id).unwrap();
+        assert_eq!(key_id_bytes.len(), 16);
 
-        // Both should decrypt to the same plaintext
-        let decrypted1 =
-            decrypt_server_response(&encrypted1, client_kp.secret_key_bytes()).unwrap();
-        let decrypted2 =
-            decrypt_server_response(&encrypted2, client_kp.secret_key_bytes()).unwrap();
+        // Verify secret is 32 bytes base64
+        let secret_bytes = URL_SAFE_NO_PAD.decode(&bundle.secret).unwrap();
+        assert_eq!(secret_bytes.len(), 32);
 
-        assert_eq!(decrypted1, plaintext);
-        assert_eq!(decrypted2, plaintext);
+        // Verify hash is valid hex (64 chars for SHA256)
+        assert_eq!(bundle.hashed_secret.len(), 64);
+        assert!(bundle.hashed_secret.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_api_key_verification() {
+        let pepper = "production-pepper";
+        let bundle = generate_api_key(pepper);
+
+        // Correct verification
+        assert!(verify_api_key_secret(
+            &bundle.secret,
+            pepper,
+            &bundle.hashed_secret
+        ));
+
+        // Wrong pepper fails
+        assert!(!verify_api_key_secret(
+            &bundle.secret,
+            "wrong-pepper",
+            &bundle.hashed_secret
+        ));
+
+        // Wrong secret fails
+        assert!(!verify_api_key_secret(
+            "wrong-secret",
+            pepper,
+            &bundle.hashed_secret
+        ));
+    }
+
+    #[test]
+    fn test_hash_consistency() {
+        let pepper = "my-pepper";
+        let secret = "my-secret";
+
+        let hash1 = hash_api_key_secret(secret, pepper);
+        let hash2 = hash_api_key_secret(secret, pepper);
+
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_parse_api_key_valid() {
+        let (key_id, secret) = parse_api_key("abc123.xyz789secret").unwrap();
+        assert_eq!(key_id, "abc123");
+        assert_eq!(secret, "xyz789secret");
+    }
+
+    #[test]
+    fn test_parse_api_key_with_dots_in_secret() {
+        let (key_id, secret) = parse_api_key("keyid.secret.with.dots").unwrap();
+        assert_eq!(key_id, "keyid");
+        assert_eq!(secret, "secret.with.dots");
+    }
+
+    #[test]
+    fn test_parse_api_key_invalid() {
+        assert!(parse_api_key("no-dot-here").is_err());
+        assert!(parse_api_key(".nosecret").is_err());
+        assert!(parse_api_key("nokeyid.").is_err());
+        assert!(parse_api_key("").is_err());
+    }
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"hello", b"hello"));
+        assert!(!constant_time_eq(b"hello", b"world"));
+        assert!(!constant_time_eq(b"hello", b"hell"));
+        assert!(!constant_time_eq(b"", b"x"));
+        assert!(constant_time_eq(b"", b""));
     }
 }

@@ -1,25 +1,20 @@
-//! Sodiumoxide Keypair Generator (Developer Tool)
+//! Keypair Generator (Developer Tool)
 //!
-//! This binary is intended for local developer use only.
+//! This binary generates X25519 keypairs for E2E encryption.
+//! Keys are printed in base64 format suitable for environment variables.
 //!
-//! It generates a Curve25519 keypair using sodiumoxide and prints the public key (Base64, URL-safe, no padding)
-//! and secret key (hex) to stdout. These keys are used for configuring secure communication in development
-//! and testing environments.
-//!
-//! **Not intended for production or automated deployment.**
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hex;
-use sodiumoxide::crypto::box_;
+//! **For local development and key provisioning only.**
+
+use rs_utils::e2e_crypto::generate_keypair;
 
 #[cfg(not(tarpaulin_include))]
 fn main() {
-    sodiumoxide::init().expect("sodium init failed");
+    let keypair = generate_keypair();
 
-    let (pk, sk) = box_::gen_keypair();
-
-    println!(
-        "SERVER_PUBLIC_KEY_B64={}",
-        URL_SAFE_NO_PAD.encode(pk.as_ref())
-    );
-    println!("SERVER_SECRET_KEY_HEX={}", hex::encode(sk.as_ref()));
+    println!("# E2E Encryption Keypair (X25519)");
+    println!("# Store the private key securely (env var, secrets manager)");
+    println!("# Distribute the public key to clients");
+    println!();
+    println!("E2E_SERVER_PUBLIC_KEY_B64={}", keypair.public_key);
+    println!("E2E_SERVER_PRIVATE_KEY_B64={}", keypair.private_key);
 }
