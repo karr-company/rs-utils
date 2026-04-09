@@ -231,7 +231,7 @@ pub fn encrypt_for_recipient(
 
     Ok(E2eEncryptedMessage {
         ciphertext: URL_SAFE_NO_PAD.encode(&ciphertext),
-        nonce: URL_SAFE_NO_PAD.encode(&nonce),
+        nonce: URL_SAFE_NO_PAD.encode(nonce),
         ephemeral_public_key: URL_SAFE_NO_PAD.encode(ephemeral_public.as_bytes()),
     })
 }
@@ -276,7 +276,7 @@ pub fn encrypt_bytes_for_recipient(
 
     Ok(E2eEncryptedMessage {
         ciphertext: URL_SAFE_NO_PAD.encode(&ciphertext),
-        nonce: URL_SAFE_NO_PAD.encode(&nonce),
+        nonce: URL_SAFE_NO_PAD.encode(nonce),
         ephemeral_public_key: URL_SAFE_NO_PAD.encode(ephemeral_public.as_bytes()),
     })
 }

@@ -235,11 +235,10 @@ impl RuleEngine {
 
     pub fn evaluate(&self, entity: &Vehicle) -> &ResultValue {
         for rule in &self.rules {
-            if rule.when.evaluate(entity) {
-                if let Some(result) = &rule.then {
+            if rule.when.evaluate(entity)
+                && let Some(result) = &rule.then {
                     return result;
                 }
-            }
         }
         &self.default
     }

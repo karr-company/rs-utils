@@ -302,12 +302,12 @@ pub async fn verify_google_id_token(
 
     let token = decode::<GoogleTokenClaims>(id_token, &decoding_key, &validation).map_err(|e| {
         match e.kind() {
-            ErrorKind::ExpiredSignature => return AuthError::Expired,
-            ErrorKind::InvalidIssuer => return AuthError::InvalidIssuer,
-            ErrorKind::InvalidAudience => return AuthError::InvalidAudience,
-            ErrorKind::InvalidToken => return AuthError::InvalidToken,
-            ErrorKind::InvalidKeyFormat => return AuthError::KeyFetch,
-            _ => return AuthError::Jwt(e),
+            ErrorKind::ExpiredSignature => AuthError::Expired,
+            ErrorKind::InvalidIssuer => AuthError::InvalidIssuer,
+            ErrorKind::InvalidAudience => AuthError::InvalidAudience,
+            ErrorKind::InvalidToken => AuthError::InvalidToken,
+            ErrorKind::InvalidKeyFormat => AuthError::KeyFetch,
+            _ => AuthError::Jwt(e),
         }
     })?;
 
@@ -345,12 +345,12 @@ pub async fn verify_apple_id_token(
 
     let token = decode::<AppleTokenClaims>(id_token, &decoding_key, &validation).map_err(|e| {
         match e.kind() {
-            ErrorKind::ExpiredSignature => return AuthError::Expired,
-            ErrorKind::InvalidIssuer => return AuthError::InvalidIssuer,
-            ErrorKind::InvalidAudience => return AuthError::InvalidAudience,
-            ErrorKind::InvalidToken => return AuthError::InvalidToken,
-            ErrorKind::InvalidKeyFormat => return AuthError::KeyFetch,
-            _ => return AuthError::Jwt(e),
+            ErrorKind::ExpiredSignature => AuthError::Expired,
+            ErrorKind::InvalidIssuer => AuthError::InvalidIssuer,
+            ErrorKind::InvalidAudience => AuthError::InvalidAudience,
+            ErrorKind::InvalidToken => AuthError::InvalidToken,
+            ErrorKind::InvalidKeyFormat => AuthError::KeyFetch,
+            _ => AuthError::Jwt(e),
         }
     })?;
 
@@ -379,9 +379,8 @@ pub async fn verify_cognito_id_token(
     let issuer_url: String = format!(
         "https://cognito-idp.{}.amazonaws.com/{}",
         region, user_pool_id
-    )
-    .into();
-    let jwks_url: String = format!("{}/.well-known/jwks.json", issuer_url).into();
+    );
+    let jwks_url: String = format!("{}/.well-known/jwks.json", issuer_url);
 
     let jwks = reqwest::get(jwks_url)
         .await
@@ -401,12 +400,12 @@ pub async fn verify_cognito_id_token(
 
     let token = decode::<serde_json::Value>(id_token, &decoding_key, &validation).map_err(|e| {
         match e.kind() {
-            ErrorKind::ExpiredSignature => return AuthError::Expired,
-            ErrorKind::InvalidIssuer => return AuthError::InvalidIssuer,
-            ErrorKind::InvalidAudience => return AuthError::InvalidAudience,
-            ErrorKind::InvalidToken => return AuthError::InvalidToken,
-            ErrorKind::InvalidKeyFormat => return AuthError::KeyFetch,
-            _ => return AuthError::Jwt(e),
+            ErrorKind::ExpiredSignature => AuthError::Expired,
+            ErrorKind::InvalidIssuer => AuthError::InvalidIssuer,
+            ErrorKind::InvalidAudience => AuthError::InvalidAudience,
+            ErrorKind::InvalidToken => AuthError::InvalidToken,
+            ErrorKind::InvalidKeyFormat => AuthError::KeyFetch,
+            _ => AuthError::Jwt(e),
         }
     })?;
 

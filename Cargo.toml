@@ -9,7 +9,7 @@ path = "src/tools/generate_keypair.rs"
 
 [dependencies]
 anyhow = "1.0.102"
-aws-sdk-dynamodb = "1.108.0"
+aws-sdk-dynamodb = "1.110.0"
 aws_lambda_events = { version = "1.1.1", default-features = false, features = [
     "apigw",
     "sqs",
@@ -33,8 +33,8 @@ sodiumoxide = "0.2.7"
 thiserror = "2.0.18"
 aes-gcm = "0.10"
 getrandom = { version = "0.4.2", features = ["std"] }
-hkdf = "0.12"
-sha2 = "0.10"
+hkdf = "0.13"
+sha2 = "0.11"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 tokio = { version = "1", features = ["full"] }
 unicode-normalization = "0.1.25"

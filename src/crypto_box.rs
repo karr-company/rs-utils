@@ -122,7 +122,7 @@ pub fn encrypt_ephemeral_box(
         .ok_or_else(|| anyhow!("Invalid sender public key"))?;
 
     let (_ephemeral_pk, ephemeral_sk) = box_::gen_keypair();
-    let recipient_sk = SecretKey::from_slice(&ephemeral_sk.as_ref())
+    let recipient_sk = SecretKey::from_slice(ephemeral_sk.as_ref())
         .ok_or_else(|| anyhow!("Invalid recipient secret key"))?;
 
     // Generate random nonce
