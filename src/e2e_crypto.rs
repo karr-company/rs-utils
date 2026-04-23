@@ -11,7 +11,7 @@
 //! ## Security Model
 //!
 //! ```text
-//! Client → Server:
+//! Client -> Server:
 //! 1. Client generates ephemeral X25519 keypair
 //! 2. Client computes shared_secret = ECDH(ephemeral_secret, server_public)
 //! 3. Client derives AES key = HKDF(shared_secret, salt, info)
@@ -213,10 +213,10 @@ pub fn encrypt_for_recipient(
     let ephemeral_secret = EphemeralSecret::random_from_rng(OsRng);
     let ephemeral_public = PublicKey::from(&ephemeral_secret);
 
-    // ECDH → shared secret
+    // ECDH -> shared secret
     let shared_secret = ephemeral_secret.diffie_hellman(&recipient_public_key);
 
-    // HKDF → AES key
+    // HKDF -> AES key
     let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
 
     // AES-256-GCM encrypt
@@ -344,10 +344,10 @@ pub fn decrypt_message_bytes(
 
     let ephemeral_public_key = PublicKey::from(ephemeral_pk_array);
 
-    // ECDH → shared secret
+    // ECDH -> shared secret
     let shared_secret = recipient_secret.diffie_hellman(&ephemeral_public_key);
 
-    // HKDF → AES key
+    // HKDF -> AES key
     let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
 
     // Decode ciphertext and nonce

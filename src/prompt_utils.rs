@@ -1,18 +1,18 @@
-///! AI Prompt Utilities
-///!
-///! This module provides utilities for processing and evaluating user prompts
-///! to ensure they meet safety standards before being used in AI applications.
-///!
-///! ## Example
-///! ```rust
-///! use prompt_utils::safe_prompt;
-///! let prompt = "What is the capital of France?".to_string();
-///! let safe_prompt_result = safe_prompt(prompt, 50);
-///! match safe_prompt_result {
-///!     Ok(safe_prompt) => println!("Safe prompt: {}", safe_prompt),
-///!     Err(err) => println!("Prompt rejected: {}", err),
-///! }
-///! ```     
+//! AI Prompt Utilities
+//!
+//! This module provides utilities for processing and evaluating user prompts
+//! to ensure they meet safety standards before being used in AI applications.
+//!
+//! ## Example
+//! ```rust
+//! use prompt_utils::safe_prompt;
+//! let prompt = "What is the capital of France?".to_string();
+//! let safe_prompt_result = safe_prompt(prompt, 50);
+//! match safe_prompt_result {
+//!     Ok(safe_prompt) => println!("Safe prompt: {}", safe_prompt),
+//!     Err(err) => println!("Prompt rejected: {}", err),
+//! }
+//! ```     
 use crate::{TokenLabel, stoplist::STOPLIST, token_map::TOKEN_MAP};
 
 fn is_stopword(token: &str) -> bool {

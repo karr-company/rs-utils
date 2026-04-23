@@ -21,7 +21,7 @@ use jsonwebtoken::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    sync::OnceLock,
+    sync::{LazyLock, Mutex},
     time::{Duration, Instant},
 };
 use thiserror::Error;
@@ -96,8 +96,13 @@ struct JwksCache {
     fetched_at: Instant,
 }
 
-/// In-memory cache for Apple's JWKS (JSON Web Key Set).
-static APPLE_JWKS: OnceLock<JwksCache> = OnceLock::new();
+/// In-memory mutex cache for Apple's JWKS (JSON Web Key Set).
+static APPLE_JWKS: LazyLock<Mutex<JwksCache>> = LazyLock::new(|| {
+    Mutex::new(JwksCache {
+        keys: JwkSet { keys: vec![] },
+        fetched_at: Instant::now() - Duration::from_secs(10 * 60), // Start as expired
+    })
+});
 
 /// Apple JWKS endpoint URL.
 static APPLE_JWKS_URL: &str = "https://account.apple.com/auth/keys";
@@ -111,20 +116,29 @@ static APPLE_ISSUERS: [&str; 4] = [
 ];
 
 /// In-memory cache for Google's JWKS (JSON Web Key Set).
-static GOOGLE_JWKS: OnceLock<JwksCache> = OnceLock::new();
+static GOOGLE_JWKS: LazyLock<Mutex<JwksCache>> = LazyLock::new(|| {
+    Mutex::new(JwksCache {
+        keys: JwkSet { keys: vec![] },
+        fetched_at: Instant::now() - Duration::from_secs(10 * 60), // Start as expired
+    })
+});
 
 /// Google JWKS endpoint URL.
 static GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
+
+/// Google token info endpoint.
+static GOOGLE_TOKEN_INFO_URL: &str = "https://oauth2.googleapis.com/tokeninfo";
 
 /// List of valid Google token issuers.
 static GOOGLE_ISSUERS: [&str; 2] = ["https://accounts.google.com", "accounts.google.com"];
 
 /// Fetches and caches Apple's JWKS (JSON Web Key Set).
 async fn get_apple_jwks() -> Result<JwkSet, AuthError> {
-    if let Some(lock) = APPLE_JWKS.get() {
+    {
+        let cache = APPLE_JWKS.lock().unwrap();
         // Check if cached keys are still valid
-        if lock.fetched_at.elapsed() < Duration::from_secs(5 * 60) {
-            return Ok(lock.keys.clone());
+        if cache.fetched_at.elapsed() < Duration::from_secs(5 * 60) {
+            return Ok(cache.keys.clone());
         }
     }
 
@@ -135,21 +149,24 @@ async fn get_apple_jwks() -> Result<JwkSet, AuthError> {
         .await
         .map_err(|_| AuthError::KeyFetch)?;
 
-    APPLE_JWKS
-        .set(JwksCache {
+    {
+        let mut cache = APPLE_JWKS.lock().unwrap();
+        *cache = JwksCache {
             keys: jwks.clone(),
             fetched_at: Instant::now(),
-        })
-        .ok();
+        };
+    }
+
     Ok(jwks)
 }
 
 /// Fetches and caches Google's JWKS (JSON Web Key Set).
 async fn get_google_jwks() -> Result<JwkSet, AuthError> {
-    if let Some(lock) = GOOGLE_JWKS.get() {
+    {
+        let cache = GOOGLE_JWKS.lock().unwrap();
         // Check if cached keys are still valid
-        if lock.fetched_at.elapsed() < Duration::from_secs(5 * 60) {
-            return Ok(lock.keys.clone());
+        if cache.fetched_at.elapsed() < Duration::from_secs(5 * 60) {
+            return Ok(cache.keys.clone());
         }
     }
 
@@ -160,12 +177,14 @@ async fn get_google_jwks() -> Result<JwkSet, AuthError> {
         .await
         .map_err(|_| AuthError::KeyFetch)?;
 
-    GOOGLE_JWKS
-        .set(JwksCache {
+    {
+        let mut cache = GOOGLE_JWKS.lock().unwrap();
+        *cache = JwksCache {
             keys: jwks.clone(),
             fetched_at: Instant::now(),
-        })
-        .ok();
+        };
+    }
+
     Ok(jwks)
 }
 
@@ -316,6 +335,45 @@ pub async fn verify_google_id_token(
     }
 
     Ok(token.claims)
+}
+
+/// Verifies a Google access token and returns its claims if valid.
+///
+/// # Arguments
+/// * `access_token` - The JWT access token to verify
+/// * `client_id` - The expected Google OAuth client ID (audience)
+///
+/// # Returns
+/// `Ok(GoogleTokenClaims)` if valid, or `AuthError` on failure
+#[cfg(not(tarpaulin_include))]
+pub async fn verify_google_access_token(
+    access_token: &str,
+    client_id: &str,
+) -> Result<GoogleTokenClaims, AuthError> {
+    // Get user info from Google tokeninfo endpoint
+    let token_info_url = format!("{}?access_token={}", GOOGLE_TOKEN_INFO_URL, access_token);
+
+    let res = reqwest::get(&token_info_url)
+        .await
+        .map_err(|_| AuthError::InvalidToken)?
+        .json::<GoogleTokenClaims>()
+        .await
+        .map_err(|_| AuthError::InvalidToken)?;
+
+    // Validate audience
+    if res.azp.as_deref() != Some(client_id) {
+        return Err(AuthError::InvalidAudience);
+    }
+
+    // Validate issuer
+    if GOOGLE_ISSUERS
+        .iter()
+        .all(|&issuer| res.iss.as_deref() != Some(issuer))
+    {
+        return Err(AuthError::InvalidIssuer);
+    }
+
+    Ok(res)
 }
 
 /// Verifies an Apple ID token and returns its claims if valid.

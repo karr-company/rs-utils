@@ -105,8 +105,6 @@ pub fn attribute_value_to_json(av: &AttributeValue) -> Value {
         Value::Array(list_json)
     } else if let Ok(b) = av.as_bool() {
         Value::Bool(*b)
-    } else if av.is_null() {
-        Value::Null
     } else {
         Value::Null
     }

@@ -62,7 +62,7 @@ pub mod validation_utils;
 
 pub use validation_utils::{
     AppleTokenClaims, AuthError, GoogleTokenClaims, is_valid_email, is_valid_phone_number,
-    verify_apple_id_token, verify_cognito_id_token, verify_google_id_token,
+    verify_apple_id_token, verify_cognito_id_token, verify_google_id_token, verify_google_access_token,
 };
 
 pub mod sst_resources;
