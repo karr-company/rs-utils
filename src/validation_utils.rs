@@ -365,14 +365,6 @@ pub async fn verify_google_access_token(
         return Err(AuthError::InvalidAudience);
     }
 
-    // Validate issuer
-    if GOOGLE_ISSUERS
-        .iter()
-        .all(|&issuer| res.iss.as_deref() != Some(issuer))
-    {
-        return Err(AuthError::InvalidIssuer);
-    }
-
     Ok(res)
 }
 
