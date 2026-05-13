@@ -90,6 +90,18 @@ pub struct GoogleTokenClaims {
     pub sub: Option<String>,
 }
 
+impl GoogleTokenClaims {
+    pub fn merge(&self, other: GoogleTokenClaims) -> Self {
+        GoogleTokenClaims {
+            name: self.name.clone().or(other.name),
+            given_name: self.given_name.clone().or(other.given_name),
+            family_name: self.family_name.clone().or(other.family_name),
+            picture: self.picture.clone().or(other.picture),
+            ..self.clone()
+        }
+    }
+}
+
 /// In-memory cache for JWKS (JSON Web Key Set) with timestamp.
 struct JwksCache {
     keys: JwkSet,
@@ -128,6 +140,9 @@ static GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
 
 /// Google token info endpoint.
 static GOOGLE_TOKEN_INFO_URL: &str = "https://oauth2.googleapis.com/tokeninfo";
+
+/// Google User info endpoint.
+static GOOGLE_USER_INFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
 /// List of valid Google token issuers.
 static GOOGLE_ISSUERS: [&str; 2] = ["https://accounts.google.com", "accounts.google.com"];
@@ -353,6 +368,10 @@ pub async fn verify_google_access_token(
     // Get user info from Google tokeninfo endpoint
     let token_info_url = format!("{}?access_token={}", GOOGLE_TOKEN_INFO_URL, access_token);
 
+    // Get user info from Google User info endpoint
+    // This is because access tokens don't automatically include user info
+    let user_info_url = format!("{}?access_token={}", GOOGLE_USER_INFO_URL, access_token);
+
     let res = reqwest::get(&token_info_url)
         .await
         .map_err(|_| AuthError::InvalidToken)?
@@ -364,6 +383,21 @@ pub async fn verify_google_access_token(
     if res.azp.as_deref() != Some(client_id) {
         return Err(AuthError::InvalidAudience);
     }
+
+    let user_info = reqwest::get(&user_info_url)
+        .await
+        .map_err(|_| AuthError::InvalidToken)?
+        .json::<GoogleTokenClaims>()
+        .await
+        .map_err(|_| AuthError::InvalidToken)?;
+
+    // Validate matching subject and email
+    if res.sub != user_info.sub || res.email != user_info.email {
+        return Err(AuthError::InvalidToken);
+    }
+
+    // Merge claims
+    let res = res.merge(user_info);
 
     Ok(res)
 }
