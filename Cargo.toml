@@ -20,7 +20,7 @@ hex = "0.4.3"
 jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
 lambda_http = "1.2.0"
 lambda_runtime = "1.2.0"
-openssl = { version = "0.10.79", features = ["vendored"] }
+openssl = { version = "0.10.80", features = ["vendored"] }
 phf = "0.13.1"
 postgres = "0.19.13"
 postgres-openssl = "0.5.3"
