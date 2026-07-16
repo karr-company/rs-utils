@@ -53,15 +53,17 @@
 //! let is_valid = verify_api_key_secret(&bundle.secret, pepper, &bundle.hashed_secret);
 //! ```
 
+#[allow(unused_imports)]
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, AeadCore, OsRng},
+    aead::{Aead, AeadCore, Generate},
 };
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use getrandom::{SysRng, rand_core::UnwrapErr};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, digest::array::SliceExt};
 use utoipa::ToSchema;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 
@@ -155,7 +157,7 @@ pub struct ApiKeyBundle {
 /// // Store keypair.private_key securely (env var, secrets manager)
 /// ```
 pub fn generate_keypair() -> E2eKeyPair {
-    let secret = StaticSecret::random_from_rng(OsRng);
+    let secret = StaticSecret::random_from_rng(&mut UnwrapErr(SysRng));
     let public = PublicKey::from(&secret);
 
     E2eKeyPair {
@@ -210,7 +212,7 @@ pub fn encrypt_for_recipient(
     let recipient_public_key = PublicKey::from(recipient_pk_array);
 
     // Generate ephemeral keypair
-    let ephemeral_secret = EphemeralSecret::random_from_rng(OsRng);
+    let ephemeral_secret = EphemeralSecret::random_from_rng(&mut UnwrapErr(SysRng));
     let ephemeral_public = PublicKey::from(&ephemeral_secret);
 
     // ECDH -> shared secret
@@ -220,10 +222,10 @@ pub fn encrypt_for_recipient(
     let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
 
     // AES-256-GCM encrypt
-    let cipher = Aes256Gcm::new_from_slice(&aes_key)
-        .map_err(|_| anyhow!("Failed to create AES cipher"))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
 
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::generate();
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext.as_bytes())
@@ -259,16 +261,16 @@ pub fn encrypt_bytes_for_recipient(
 
     let recipient_public_key = PublicKey::from(recipient_pk_array);
 
-    let ephemeral_secret = EphemeralSecret::random_from_rng(OsRng);
+    let ephemeral_secret = EphemeralSecret::random_from_rng(&mut UnwrapErr(SysRng));
     let ephemeral_public = PublicKey::from(&ephemeral_secret);
 
     let shared_secret = ephemeral_secret.diffie_hellman(&recipient_public_key);
     let aes_key = derive_aes_key(shared_secret.as_bytes(), hkdf_params)?;
 
-    let cipher = Aes256Gcm::new_from_slice(&aes_key)
-        .map_err(|_| anyhow!("Failed to create AES cipher"))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
 
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::generate();
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)
@@ -310,8 +312,7 @@ pub fn decrypt_message(
 ) -> Result<String> {
     let decrypted_bytes = decrypt_message_bytes(encrypted, recipient_private_key_b64, hkdf_params)?;
 
-    String::from_utf8(decrypted_bytes)
-        .map_err(|_| anyhow!("Decrypted data is not valid UTF-8"))
+    String::from_utf8(decrypted_bytes).map_err(|_| anyhow!("Decrypted data is not valid UTF-8"))
 }
 
 /// Decrypts a message to raw bytes using the recipient's private key
@@ -355,18 +356,23 @@ pub fn decrypt_message_bytes(
         .decode(&encrypted.ciphertext)
         .map_err(|_| anyhow!("Invalid ciphertext base64"))?;
 
-    let nonce_bytes = URL_SAFE_NO_PAD
+    let Some(nonce_bytes) = URL_SAFE_NO_PAD
         .decode(&encrypted.nonce)
-        .map_err(|_| anyhow!("Invalid nonce base64"))?;
+        .map_err(|_| anyhow!("Invalid nonce base64"))?
+        .as_hybrid_array()
+        .cloned()
+    else {
+        anyhow::bail!("Invalid nonce base64")
+    };
 
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes).map_err(|_| anyhow!("Invalid nonce"))?;
 
     // AES-256-GCM decrypt
-    let cipher = Aes256Gcm::new_from_slice(&aes_key)
-        .map_err(|_| anyhow!("Failed to create AES cipher"))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&aes_key).map_err(|_| anyhow!("Failed to create AES cipher"))?;
 
     cipher
-        .decrypt(nonce, ciphertext.as_ref())
+        .decrypt(&nonce, ciphertext.as_ref())
         .map_err(|_| anyhow!("Decryption failed - invalid ciphertext or authentication tag"))
 }
 
@@ -568,8 +574,7 @@ mod tests {
         let encrypted =
             encrypt_bytes_for_recipient(&plaintext, &recipient.public_key, &params).unwrap();
 
-        let decrypted =
-            decrypt_message_bytes(&encrypted, &recipient.private_key, &params).unwrap();
+        let decrypted = decrypt_message_bytes(&encrypted, &recipient.private_key, &params).unwrap();
 
         assert_eq!(decrypted, plaintext);
     }
