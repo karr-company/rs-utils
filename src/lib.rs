@@ -27,9 +27,11 @@
 //! - The `cockroach_utils` module is not exported and is for legacy use only.
 //! - The `generate_keypair` binary is for local developer use.
 
-// New secure E2E encryption module (recommended)
+// Secure E2E encryption module (recommended)
+#[cfg(feature = "e2e")]
 pub mod e2e_crypto;
 
+#[cfg(feature = "e2e")]
 pub use e2e_crypto::{
     ApiKeyBundle, E2eEncryptedMessage, E2eKeyPair, HkdfParams,
     decrypt_message, decrypt_message_bytes,
@@ -43,30 +45,34 @@ pub use e2e_crypto::{
 //     since = "0.2.0",
 //     note = "Use `e2e_crypto` module instead. NaCl encryption is not NIST-compliant and will be removed in a future version."
 // )]
+#[cfg(feature = "crypto")]
 pub mod crypto_box;
-
+#[cfg(feature = "crypto")]
 #[allow(deprecated)]
 pub use crypto_box::{
     EncryptedEphemeralMessage, EncryptedMessage, decrypt_box, encrypt_box, encrypt_ephemeral_box,
     gen_nonce_b64,
 };
 
+#[cfg(feature = "json")]
 pub mod json_utils;
-
+#[cfg(feature = "json")]
 pub use json_utils::{
     attribute_value_to_json, convert_and_deserialize, empty_json_response, error_response,
     item_to_json_map, json_response, UploadWithFields
 };
 
+#[cfg(feature = "jwt")]
 pub mod validation_utils;
-
+#[cfg(feature = "jwt")]
 pub use validation_utils::{
     AppleTokenClaims, AuthError, GoogleTokenClaims, is_valid_email, is_valid_phone_number,
     verify_apple_id_token, verify_cognito_id_token, verify_google_id_token, verify_google_access_token,
 };
 
+#[cfg(feature = "sst")]
 pub mod sst_resources;
-
+#[cfg(feature = "sst")]
 pub use sst_resources::{
     Bucket, Email, Function, IdentityPool, Queue, Secret, StepFunction, Table, Topic, UserPool, UserPoolClient,
 };
@@ -80,10 +86,14 @@ pub enum TokenLabel {
 mod stoplist;
 mod token_map;
 
+#[cfg(feature = "ai")]
 pub mod prompt_utils;
+#[cfg(feature = "ai")]
 pub use prompt_utils::safe_prompt;
 
+#[cfg(feature = "vehicle")]
 pub mod vehicle_utils;
+#[cfg(feature = "vehicle")]
 pub use vehicle_utils::{
     Condition, ResultType, ResultValue, Rule, RuleEngine, ScannedVehicleFine, Vehicle,
 };
