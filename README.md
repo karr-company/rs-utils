@@ -9,7 +9,6 @@ Reusable Rust helpers for AWS Lambda, DynamoDB, E2E cryptography, validation, an
 | Module | Description | Status |
 |--------|-------------|--------|
 | [`e2e_crypto`](#e2e_crypto) | Secure E2E encryption (X25519 + AES-256-GCM) | **Recommended** |
-| [`crypto_box`](#crypto_box) | Legacy NaCl/sodiumoxide encryption | Deprecated |
 | [`json_utils`](#json_utils) | Lambda/API + DynamoDB JSON helpers | Stable |
 | [`validation_utils`](#validation_utils) | Email, phone, JWT validation | Stable |
 | [`sst_resources`](#sst_resources) | Typed SST resource definitions | Stable |
@@ -83,16 +82,6 @@ let is_valid = verify_api_key_secret(&bundle.secret, pepper, &bundle.hashed_secr
 - `E2eEncryptedMessage` — ciphertext + nonce + ephemeral public key
 - `HkdfParams` — salt and info strings for key derivation
 - `ApiKeyBundle` — generated API key with `key_id`, `hashed_secret`, `secret`, `full_key`
-
----
-
-## crypto_box (deprecated)
-
-Legacy NaCl `box` encryption via `sodiumoxide`. Prefer `e2e_crypto` for new development.
-
-```rust
-use rs_utils::{encrypt_box, decrypt_box};
-```
 
 ---
 

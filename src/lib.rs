@@ -4,7 +4,6 @@
 //!
 //! ## Modules
 //! - [`e2e_crypto`]: **Recommended** - Secure E2E encryption (X25519 + AES-256-GCM, NIST-compliant)
-//! - [`crypto_box`]: **Deprecated** - Legacy encryption (NaCl/sodiumoxide)
 //! - [`json_utils`]: JSON helpers for Lambda/API and DynamoDB conversions
 //! - [`validation_utils`]: Email, phone, and JWT validation helpers
 //! - [`sst_resources`]: Typed SST resource definitions (Table, Bucket, etc.)
@@ -38,20 +37,6 @@ pub use e2e_crypto::{
     encrypt_bytes_for_recipient, encrypt_for_recipient,
     generate_api_key, generate_keypair as e2e_generate_keypair,
     hash_api_key_secret, parse_api_key, verify_api_key_secret,
-};
-
-// Legacy crypto_box module (deprecated)
-// #[deprecated(
-//     since = "0.2.0",
-//     note = "Use `e2e_crypto` module instead. NaCl encryption is not NIST-compliant and will be removed in a future version."
-// )]
-#[cfg(feature = "crypto")]
-pub mod crypto_box;
-#[cfg(feature = "crypto")]
-#[allow(deprecated)]
-pub use crypto_box::{
-    EncryptedEphemeralMessage, EncryptedMessage, decrypt_box, encrypt_box, encrypt_ephemeral_box,
-    gen_nonce_b64,
 };
 
 #[cfg(feature = "json")]
