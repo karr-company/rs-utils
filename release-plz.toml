@@ -1,2 +1,2 @@
-[workspace]
+[package]
 git-only = true
