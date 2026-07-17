@@ -1,6 +1,6 @@
 [package]
 name = "rs-utils"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 publish = false
 
@@ -54,7 +54,5 @@ ai = []
 vehicle = []
 # End-to-end encryption helpers
 e2e = []
-# Crypto helpers
-crypto = []
 # Default features
-default = ["sst", "json", "jwt", "ai", "vehicle", "e2e", "crypto"]
+default = ["sst", "json", "jwt", "ai", "vehicle", "e2e"]
