@@ -1,2 +1,4 @@
 [[package]]
 name = "rs-utils"
+publish = false
+git_release_enable = true
