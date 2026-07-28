@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -43,7 +43,7 @@ jobs:
 
 
       - name: Checkout docs repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: karr-company/docs
           token: ${{ secrets.DOCGEN_TOKEN }}
