@@ -84,3 +84,11 @@ pub struct Function {
     pub name: String,
     pub url: Option<String>,
 }
+
+// SST Event Bridge Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Bus {
+    pub name: String,
+    pub arn: String,
+}

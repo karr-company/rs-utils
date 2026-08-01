@@ -32,19 +32,18 @@ pub mod e2e_crypto;
 
 #[cfg(feature = "e2e")]
 pub use e2e_crypto::{
-    ApiKeyBundle, E2eEncryptedMessage, E2eKeyPair, HkdfParams,
-    decrypt_message, decrypt_message_bytes,
-    encrypt_bytes_for_recipient, encrypt_for_recipient,
-    generate_api_key, generate_keypair as e2e_generate_keypair,
-    hash_api_key_secret, parse_api_key, verify_api_key_secret,
+    ApiKeyBundle, E2eEncryptedMessage, E2eKeyPair, HkdfParams, decrypt_message,
+    decrypt_message_bytes, encrypt_bytes_for_recipient, encrypt_for_recipient, generate_api_key,
+    generate_keypair as e2e_generate_keypair, hash_api_key_secret, parse_api_key,
+    verify_api_key_secret,
 };
 
 #[cfg(feature = "json")]
 pub mod json_utils;
 #[cfg(feature = "json")]
 pub use json_utils::{
-    attribute_value_to_json, convert_and_deserialize, empty_json_response, error_response,
-    item_to_json_map, json_response, UploadWithFields
+    UploadWithFields, attribute_value_to_json, convert_and_deserialize, empty_json_response,
+    error_response, item_to_json_map, json_response,
 };
 
 #[cfg(feature = "jwt")]
@@ -52,14 +51,16 @@ pub mod validation_utils;
 #[cfg(feature = "jwt")]
 pub use validation_utils::{
     AppleTokenClaims, AuthError, GoogleTokenClaims, is_valid_email, is_valid_phone_number,
-    verify_apple_id_token, verify_cognito_id_token, verify_google_id_token, verify_google_access_token,
+    verify_apple_id_token, verify_cognito_id_token, verify_google_access_token,
+    verify_google_id_token,
 };
 
 #[cfg(feature = "sst")]
 pub mod sst_resources;
 #[cfg(feature = "sst")]
 pub use sst_resources::{
-    Bucket, Email, Function, IdentityPool, Queue, Secret, StepFunction, Table, Topic, UserPool, UserPoolClient,
+    Bucket, Bus, Email, Function, IdentityPool, Queue, Secret, StepFunction, Table, Topic,
+    UserPool, UserPoolClient,
 };
 
 #[derive(Debug)]
