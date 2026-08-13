@@ -59,7 +59,7 @@ pub use validation_utils::{
 pub mod sst_resources;
 #[cfg(feature = "sst")]
 pub use sst_resources::{
-    Bucket, Bus, Email, Function, IdentityPool, Queue, Secret, StepFunction, Table, Topic,
+    Bucket, Bus, Email, Function, IdentityPool, Queue, Secret, Service, StepFunction, Table, Topic,
     UserPool, UserPoolClient,
 };
 

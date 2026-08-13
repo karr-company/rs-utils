@@ -92,3 +92,11 @@ pub struct Bus {
     pub name: String,
     pub arn: String,
 }
+
+/// SST Service Resource
+#[cfg(not(tarpaulin_include))]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Service {
+    pub service: String,
+    pub url: String,
+}
