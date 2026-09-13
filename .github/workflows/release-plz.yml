@@ -42,3 +42,36 @@ jobs:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+
+  release-plz-release:
+    name: Release-plz Release
+    runs-on: ubuntu-24.04
+    if: ${{ github.repository_owner == 'karr-company' }}
+    environment: release-plz
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses:  actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: rustup update stable
+
+      - name: Generate GitHub token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          permission-contents: write
+
+      - name: Run release-plz
+        uses: release-plz/action@b5543c19b03be9bd48852d20ca89f478b7723260 # v0.5.132
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}

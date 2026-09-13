@@ -1,4 +1,30 @@
+[workspace]
+
+# A release happens only when a release-plz PR is merged.
+release_always = false
+
+# Let release-plz maintain CHANGELOG.md.
+changelog_update = true
+
+# Don't unexpectedly update the entire dependency graph during a release.
+dependencies_update = false
+
 [[package]]
+
 name = "rs-utils"
+
+# This crate is never published to crates.io.
 publish = false
+
+# Git tags, rather than crates.io, are the version source of truth.
+git_only = true
+
+# Create vX.Y.Z.
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+
+# Create a real, published GitHub Release.
 git_release_enable = true
+git_release_name = "v{{ version }}"
+git_release_draft = false
+git_release_latest = true
