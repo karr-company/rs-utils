@@ -36,7 +36,7 @@ sha2 = "0.11"
 x25519-dalek = { version ="3.0.0", features = ["static_secrets"] }
 tokio = { version = "1", features = ["full"] }
 unicode-normalization = "0.1.25"
-utoipa = "5.5.0"
+utoipa = "6.0.0"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
