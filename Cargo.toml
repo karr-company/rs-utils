@@ -10,7 +10,7 @@ path = "src/tools/generate_keypair.rs"
 
 [dependencies]
 anyhow = "1.0.104"
-aws-sdk-dynamodb = "1.138.0"
+aws-sdk-dynamodb = "1.140.0"
 aws_lambda_events = { version = "1.2.1", default-features = false, features = [
     "apigw",
     "sqs",
@@ -19,12 +19,12 @@ chrono = "0.4.45"
 base64 = "0.23.1"
 getrandom = { version = "0.4.3", features = ["std"] }
 hex = "0.4.3"
-jsonwebtoken = { version = "11.1.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "12.0.0", features = ["aws_lc_rs"] }
 lambda_http = "1.3.2"
 lambda_runtime = "1.5.0"
 openssl = { version = "0.10.82", features = ["vendored"] }
 phf = "0.14.0"
-regex = "1.13.1"
+regex = "1.13.2"
 reqwest = { version = "0.13.5", features = ["json"] }
 rust-s3 = "0.38.0"
 serde = { version = "1.0.229", features = ["derive"] }
